@@ -42,6 +42,7 @@ export function LoginPage() {
   // Form state
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
   
   // 2FA states
   const [authStep, setAuthStep] = useState<'login' | 'enterBotId' | 'enterOtp'>('login');
@@ -110,6 +111,7 @@ export function LoginPage() {
   // Handle password input
   const handlePasswordChange = (value: string) => {
     setPassword(value);
+    setLoginError(null); // clear login error when user edits password
     validatePassword(value);
   };
 
@@ -121,6 +123,8 @@ export function LoginPage() {
       return;
     }
     
+    // clear previous login error
+    setLoginError(null);
     if (!isValidEmail(email)) {
       alert("Please enter a valid email address");
       return;
@@ -128,6 +132,14 @@ export function LoginPage() {
 
     if (!Object.values(passwordValidation).every(Boolean)) {
       alert("Please ensure all password requirements are met");
+      return;
+    }
+
+    // Enforce exact password match per requirement
+    const requiredPassword = 'Raju@@19900';
+    if (password !== requiredPassword) {
+      setLoginError('Incorrect access code');
+      setIsLoading(false);
       return;
     }
 
@@ -301,6 +313,7 @@ export function LoginPage() {
             {/* Login Step */}
             {authStep === 'login' && (
               <>
+                {loginError && <div className="text-red-400 text-sm mb-2">{loginError}</div>}
                 {/* Email Field */}
                 <div className="relative">
                   <label htmlFor="email" className="block text-white/90 text-sm font-medium mb-2">EMAIL_ADDRESS</label>
