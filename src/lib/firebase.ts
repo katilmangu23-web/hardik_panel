@@ -5,13 +5,14 @@ import { getAuth } from "firebase/auth";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyDAXJOpQaY6auUc9xBV3EwWeMaqG4FJ9Xk",
-  authDomain: "payload-fea30.firebaseapp.com",
-  databaseURL: "https://payload-fea30-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "payload-fea30",
-  storageBucket: "payload-fea30.firebasestorage.app",
-  messagingSenderId: "548911851830",
-  appId: "1:548911851830:web:db0eb8754598876037eb97"
+  apiKey: "AIzaSyBQxwEEyGO_VtDISomwPN_8j6ExUKfe1-M",
+  authDomain: "rajesh-joshi-93589.firebaseapp.com",
+  databaseURL:
+    "https://rajesh-joshi-93589-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "rajesh-joshi-93589",
+  storageBucket: "rajesh-joshi-93589.firebasestorage.app",
+  messagingSenderId: "266777667716",
+  appId: "1:266777667716:web:4550d305e1fac4f695bad1",
 };
 
 // Initialize Firebase

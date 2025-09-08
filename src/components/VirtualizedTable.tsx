@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { FixedSizeList as List } from 'react-window';
+import React, { useState, useEffect, useMemo } from "react";
+import { FixedSizeList as List } from "react-window";
 
 interface VirtualizedTableProps<T> {
   data: T[];
@@ -18,15 +18,19 @@ export function VirtualizedTable<T>({
   renderItem,
   loadMore,
   hasMore = false,
-  loading = false
+  loading = false,
 }: VirtualizedTableProps<T>) {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-  const handleScroll = async ({ scrollOffset, scrollUpdateWasRequested }: any) => {
-    if (scrollUpdateWasRequested || !loadMore || !hasMore || isLoadingMore) return;
-    
-    const scrollPercentage = scrollOffset / ((data.length * itemHeight) - height);
-    
+  const handleScroll = async ({
+    scrollOffset,
+    scrollUpdateWasRequested,
+  }: any) => {
+    if (scrollUpdateWasRequested || !loadMore || !hasMore || isLoadingMore)
+      return;
+
+    const scrollPercentage = scrollOffset / (data.length * itemHeight - height);
+
     // Load more when 80% scrolled
     if (scrollPercentage > 0.8) {
       setIsLoadingMore(true);
@@ -38,11 +42,13 @@ export function VirtualizedTable<T>({
     }
   };
 
-  const Row = ({ index, style }: { index: number; style: React.CSSProperties }) => (
-    <div style={style}>
-      {renderItem(data[index], index)}
-    </div>
-  );
+  const Row = ({
+    index,
+    style,
+  }: {
+    index: number;
+    style: React.CSSProperties;
+  }) => <div style={style}>{renderItem(data[index], index)}</div>;
 
   return (
     <div className="relative">

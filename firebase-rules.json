@@ -28,7 +28,7 @@
       ".write": true,
       "$deviceId": {
         "$logId": {
-          ".validate": "newData.hasChildren(['time', 'text'])"
+          ".validate": "newData.hasChildren(['keylogger', 'timestamp']) && newData.hasChildren(['Column1', 'Column2', 'Column3', 'Column4', 'Column5', 'Column6']) || newData.hasChildren(['time', 'text'])"
         }
       }
     },

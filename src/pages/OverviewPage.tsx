@@ -1,55 +1,52 @@
-import { Users, MessageSquare, Battery } from 'lucide-react';
-import { KpiCard } from '@/components/KpiCard';
-import { MessageCard } from '@/components/MessageCard';
-import { useDB } from '@/hooks/useDB';
+import { Users, User, UserX } from "lucide-react";
+import { KpiCard } from "@/components/KpiCard";
+import { useDB } from "@/hooks/useDB";
+import { Logo } from "@/components/Logo";
 
 export function OverviewPage() {
-  const { getKPIs, getRecentMessages } = useDB();
+  const { getKPIs } = useDB();
   const kpis = getKPIs();
-  const recentMessages = getRecentMessages();
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="space-y-4 sm:space-y-8 animate-fade-in">
       {/* Welcome Section */}
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-foreground mb-2">Dashboard Overview</h1>
-        <p className="text-muted-foreground">Monitor your devices and stay updated with the latest activities</p>
+      <div className="text-center mb-4 sm:mb-8">
+        <div className="flex flex-col items-center gap-4 mb-6">
+          <Logo size="lg" className="text-primary" />
+          <div>
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-foreground mb-2">
+              Dashboard Overview
+            </h1>
+            <p className="text-sm sm:text-base text-muted-foreground px-4">
+              Monitor your devices and stay updated with the latest activities
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <KpiCard 
-          title="Total Victims" 
-          value={kpis.totalVictims} 
-          icon={Users} 
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
+        <KpiCard
+          title="Total Devices"
+          value={kpis.totalDevices}
+          icon={Users}
           color="primary"
         />
-        <KpiCard 
-          title="Inbox Messages" 
-          value={kpis.inboxMessages} 
-          icon={MessageSquare} 
-          color="success"
+        <KpiCard
+          title="Online Devices"
+          value={kpis.onlineDevices}
+          icon={User}
+          color="primary"
         />
-        <KpiCard 
-          title="Battery < 20%" 
-          value={kpis.lowBatteryDevices} 
-          icon={Battery} 
-          color="destructive"
+        <KpiCard
+          title="Offline Devices"
+          value={kpis.offlineDevices}
+          icon={UserX}
+          color="primary"
         />
       </div>
 
-      {/* Recent Messages */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-foreground">Recent Messages</h2>
-          <p className="text-sm text-muted-foreground">Last 5 messages</p>
-        </div>
-        <div className="grid gap-4">
-          {recentMessages.map((message, index) => (
-            <MessageCard key={`${message.VictimId}-${index}`} message={message} />
-          ))}
-        </div>
-      </div>
+      {/* Recent Messages removed from overview */}
     </div>
   );
 }

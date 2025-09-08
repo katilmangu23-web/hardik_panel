@@ -1,0 +1,22 @@
+<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+  <!-- Globe background -->
+  <circle cx="120" cy="150" r="80" fill="#87CEEB" opacity="0.3"/>
+  <path d="M 60 150 Q 120 100 180 150 Q 120 200 60 150" fill="none" stroke="#4A90E2" stroke-width="2"/>
+  <path d="M 120 80 Q 150 150 120 220" fill="none" stroke="#4A90E2" stroke-width="2"/>
+  <path d="M 120 80 Q 90 150 120 220" fill="none" stroke="#4A90E2" stroke-width="2"/>
+  
+  <!-- Plant/leaves -->
+  <ellipse cx="90" cy="120" rx="15" ry="25" fill="#2E8B57" transform="rotate(-30 90 120)"/>
+  <ellipse cx="110" cy="110" rx="12" ry="20" fill="#32CD32" transform="rotate(-10 110 110)"/>
+  <ellipse cx="130" cy="115" rx="14" ry="22" fill="#228B22" transform="rotate(20 130 115)"/>
+  
+  <!-- Monitor -->
+  <rect x="220" y="100" width="120" height="80" rx="8" fill="#1E3A8A" stroke="#1E40AF" stroke-width="2"/>
+  <rect x="230" y="110" width="100" height="60" fill="#87CEEB"/>
+  <rect x="270" y="185" width="20" height="15" fill="#1E3A8A"/>
+  <ellipse cx="280" cy="210" rx="25" ry="8" fill="#1E3A8A"/>
+  
+  <!-- Laptop/keyboard -->
+  <rect x="200" y="200" width="80" height="8" rx="4" fill="#1E3A8A"/>
+  <rect x="205" y="195" width="70" height="5" rx="2" fill="#4A90E2"/>
+</svg>
