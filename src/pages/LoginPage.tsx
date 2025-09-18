@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { Eye, EyeOff, Mail, Lock, Shield } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { TelegramOTPVerification } from "@/components/TelegramOTPVerification";
+import { TelegramConnect } from "@/components/TelegramConnect";
+import { telegramService } from "@/lib/telegramService";
 
 // Sample email suggestions (you can replace with your actual data)
 const emailSuggestions = [
-  "krishnadabhi592@gmail.com",
+  "rajupainter2222@gmail.com",
   "admin@company.com",
   "user@example.com",
   "test@domain.com",
@@ -36,6 +39,11 @@ export function LoginPage() {
     return () => clearTimeout(t);
   }, []);
 
+  // Check if Telegram service is available
+  useEffect(() => {
+    setIsTelegramAvailable(telegramService.isAvailable());
+  }, []);
+
   const handleVideoLoad = () => setVideoLoaded(true);
   const handleVideoError = () => console.warn('Background video failed to load on LoginPage');
   
@@ -44,18 +52,11 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   
-  // 2FA states
-  const [authStep, setAuthStep] = useState<'login' | 'enterBotId' | 'enterOtp'>('login');
-  const [telegramId, setTelegramId] = useState('');
-  const [botIdError, setBotIdError] = useState<string | null>(null);
-  const [generatedOtp, setGeneratedOtp] = useState<string | null>(null);
-  const [otpInput, setOtpInput] = useState('');
-  const [otpError, setOtpError] = useState<string | null>(null);
-  const [otpSentAt, setOtpSentAt] = useState<number | null>(null);
-  const [isSendingOtp, setIsSendingOtp] = useState(false);
-  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
-  const [tempUserPayload, setTempUserPayload] = useState<any>(null);
-  const [sendResponseInfo, setSendResponseInfo] = useState<string | null>(null);
+  // Telegram OTP state
+  const [showOTPVerification, setShowOTPVerification] = useState(false);
+  const [showTelegramConnect, setShowTelegramConnect] = useState(false);
+  const [isTelegramAvailable, setIsTelegramAvailable] = useState(false);
+  const [linkedChatId, setLinkedChatId] = useState<string | null>(null);
   
   // Email suggestions
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -115,14 +116,9 @@ export function LoginPage() {
     validatePassword(value);
   };
 
-  // Handle form submission
+  // Handle form submission (email + password + Telegram OTP)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // If we're in a 2FA step, don't run the initial login flow when the form is submitted
-    if (authStep !== 'login') {
-      return;
-    }
-    
     // clear previous login error
     setLoginError(null);
     if (!isValidEmail(email)) {
@@ -136,7 +132,7 @@ export function LoginPage() {
     }
 
     // Enforce exact password match per requirement
-    const requiredPassword = 'Raju@@19900';
+    const requiredPassword = 'Mira@@1122';
     if (password !== requiredPassword) {
       setLoginError('Incorrect access code');
       setIsLoading(false);
@@ -145,107 +141,38 @@ export function LoginPage() {
 
     setIsLoading(true);
 
-    // Simulate initial credential check (replace with real auth call)
+    // Proceed to Telegram connection (mandatory)
     setTimeout(() => {
-      const username = email.split('@')[0].replace(/[._]/g, ' ');
-      // Save the payload until 2FA completes — don't call login() yet.
-      setTempUserPayload({ email, username, isLoggedIn: true, rememberSession });
       setIsLoading(false);
-      // Move to telegram id step for 2FA
-      setAuthStep('enterBotId');
+      setShowTelegramConnect(true);
     }, 800);
   };
 
-  // Send OTP to provided Telegram chat id using the configured bot token
-  const sendOtpToTelegram = async (chatId: string) => {
-    // clear previous errors
-    setBotIdError(null);
-    setSendResponseInfo(null);
-
-    const token = "7989812948:AAE84-5AZVYA2ufsNr6yxMgGCYCX6qQczSw";
-
-    if (!token) {
-      setBotIdError('Bot token not configured on the client. Ask admin to configure VITE_TELEGRAM_BOT_TOKEN.');
-      return;
-    }
-
-    if (!chatId || chatId.trim().length === 0) {
-      setBotIdError('Please enter a valid Telegram chat id.');
-      return;
-    }
-
-    const otp = String(Math.floor(100000 + Math.random() * 900000));
-    setGeneratedOtp(otp);
-    setIsSendingOtp(true);
-    try {
-      const url = `https://api.telegram.org/bot${token}/sendMessage`;
-      const body = { chat_id: chatId, text: `Your login OTP is: ${otp}` };
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data || !data.ok) {
-        const description = data?.description || `HTTP ${res.status}`;
-        setBotIdError(`Failed to send OTP: ${description}`);
-        return;
-      }
-      setOtpSentAt(Date.now());
-      setSendResponseInfo('OTP sent. Check your Telegram.');
-      setAuthStep('enterOtp');
-    } catch (err: any) {
-      setBotIdError(err?.message || 'Failed to send OTP');
-    } finally {
-      setIsSendingOtp(false);
-    }
+  // Handle successful OTP verification
+  const handleOTPSuccess = () => {
+    const username = email.split('@')[0].replace(/[._]/g, ' ');
+    login({ email, username, isLoggedIn: true, rememberSession });
+    navigate('/');
   };
 
-  const verifyOtpAndFinish = async () => {
-    setIsVerifyingOtp(true);
-    try {
-      // Simple synchronous verification (client-side generated). In production,
-      // verification must happen server-side.
-      setOtpError(null);
-      if (generatedOtp && otpInput.trim() === generatedOtp) {
-        // complete login
-        if (tempUserPayload) {
-          login(tempUserPayload);
-        }
-        // redirect to home
-        navigate('/');
-      } else {
-        setOtpError('Invalid or expired OTP. Please try again or resend.');
-      }
-    } finally {
-      setIsVerifyingOtp(false);
-    }
+  // Handle successful Telegram connection
+  const handleTelegramConnected = (chatId: string) => {
+    setLinkedChatId(chatId);
+    setShowTelegramConnect(false);
+    setShowOTPVerification(true);
   };
 
-  // Clear messages/errors appropriately when switching between steps
-  useEffect(() => {
-    if (authStep === 'enterBotId') {
-      // When showing the chat id input, clear any previous OTP-related messages
-      setSendResponseInfo(null);
-      setOtpError(null);
-      // keep botIdError cleared only when user returns to edit
-      // (botIdError will also be cleared on input change)
-    }
 
-    if (authStep === 'enterOtp') {
-      // When showing OTP input, clear previous otp error so user sees a fresh state
-      setOtpError(null);
-      // keep sendResponseInfo so user can see confirmation that OTP was sent
-      setBotIdError(null);
-    }
+  // Handle back from OTP verification
+  const handleOTPBack = () => {
+    setShowOTPVerification(false);
+    setShowTelegramConnect(true);
+    setLoginError(null);
+  };
 
-    if (authStep === 'login') {
-      // clear 2FA related messages when returning to initial login
-      setBotIdError(null);
-      setOtpError(null);
-      setSendResponseInfo(null);
-    }
-  }, [authStep]);
+  // Removed Telegram send/verify functions
+
+  // Removed 2FA step management effect
 
   return (
     <div className="min-h-screen w-full relative flex items-center justify-center p-4">
@@ -308,11 +235,23 @@ export function LoginPage() {
             </div>
           </div>
 
-          {/* Login / 2FA Form */}
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Login Step */}
-            {authStep === 'login' && (
-              <>
+          {/* Show appropriate step */}
+          {showTelegramConnect ? (
+            <TelegramConnect
+              email={email}
+              onConnected={handleTelegramConnected}
+            />
+          ) : showOTPVerification ? (
+            <TelegramOTPVerification
+              email={email}
+              chatId={linkedChatId || ""}
+              onVerificationSuccess={handleOTPSuccess}
+              onBack={handleOTPBack}
+            />
+          ) : (
+            <>
+              {/* Login Form (email + password) */}
+              <form onSubmit={handleSubmit} className="space-y-6">
                 {loginError && <div className="text-red-400 text-sm mb-2">{loginError}</div>}
                 {/* Email Field */}
                 <div className="relative">
@@ -450,65 +389,19 @@ export function LoginPage() {
                     </div>
                   )}
                 </Button>
-              </>
-            )}
-
-            {/* Enter Telegram Bot ID Step */}
-            {authStep === 'enterBotId' && (
-              <div className="space-y-4">
-                <label className="block text-white/90 text-sm font-medium">Telegram Chat ID</label>
-                <Input
-                  value={telegramId}
-                  onChange={(e) => { setTelegramId(e.target.value); setBotIdError(null); }}
-                  onFocus={() => {
-                    // clear send success/info and bot errors when user focuses the chat id field
-                    setSendResponseInfo(null);
-                    setBotIdError(null);
-                  }}
-                  placeholder="Enter your Telegram chat id"
-                  className="bg-black/50 border-white/40 text-[#00ffff]/90"
-                />
-                {botIdError && <div className="text-red-500 text-sm">{botIdError}</div>}
-                <div className="flex gap-2">
-                  <Button type="button" onClick={() => sendOtpToTelegram(telegramId)} disabled={isSendingOtp || !telegramId}>{isSendingOtp ? 'Sending...' : 'Send OTP'}</Button>
-                  <Button type="button" variant="ghost" onClick={() => { setAuthStep('login'); setTempUserPayload(null); setBotIdError(null); setSendResponseInfo(null); setOtpError(null); }}>Cancel</Button>
+              </form>
+              
+              {/* Telegram Availability Notice */}
+              {isTelegramAvailable && (
+                <div className="mt-4 p-3 bg-[#00ffff]/10 border border-[#00ffff]/30 rounded-lg">
+                  <div className="flex items-center gap-2 text-sm text-[#00ffff]/90">
+                    <div className="w-2 h-2 bg-[#00ffff] rounded-full animate-pulse"></div>
+                    <span>Telegram OTP verification will be required after login</span>
+                  </div>
                 </div>
-                {sendResponseInfo && <div className="text-green-500 text-sm">{sendResponseInfo}</div>}
-              </div>
-            )}
-
-            {/* Enter OTP Step */}
-            {authStep === 'enterOtp' && (
-              <div className="space-y-4">
-                <label className="block text-white/90 text-sm font-medium">Enter OTP</label>
-                <Input
-                  value={otpInput}
-                  onChange={(e) => { setOtpInput(e.target.value); setOtpError(null); }}
-                  onFocus={() => {
-                    // clear previous otp error when user focuses the OTP input
-                    setOtpError(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      // Prevent the form submit from running the initial login flow
-                      e.preventDefault();
-                      // Trigger OTP verification when user presses Enter
-                      verifyOtpAndFinish();
-                    }
-                  }}
-                  placeholder="6-digit OTP"
-                  className="bg-black/50 border-white/40 text-[#00ffff]/90"
-                />
-                {otpError && <div className="text-red-500 text-sm">{otpError}</div>}
-                <div className="flex gap-2">
-                  <Button type="button" onClick={verifyOtpAndFinish} disabled={isVerifyingOtp || !otpInput}>{isVerifyingOtp ? 'Verifying...' : 'Verify & Continue'}</Button>
-                  <Button type="button" variant="ghost" onClick={() => { setAuthStep('enterBotId'); setOtpError(null); setSendResponseInfo(null); setBotIdError(null); }}>Back</Button>
-                  <Button type="button" variant="outline" onClick={() => { setOtpError(null); setBotIdError(null); setSendResponseInfo(null); sendOtpToTelegram(telegramId); }} disabled={isSendingOtp}>Resend OTP</Button>
-                </div>
-                <div className="text-xs text-white/60">OTP will expire in 5 minutes.</div>
-              </div>
-            )}
-          </form>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>

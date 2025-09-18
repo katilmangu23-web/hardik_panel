@@ -3,16 +3,15 @@ import { getDatabase } from "firebase/database";
 import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
-// Your web app's Firebase configuration
+// Your web app's Firebase configuration (updated)
 const firebaseConfig = {
-  apiKey: "AIzaSyBQxwEEyGO_VtDISomwPN_8j6ExUKfe1-M",
-  authDomain: "rajesh-joshi-93589.firebaseapp.com",
-  databaseURL:
-    "https://rajesh-joshi-93589-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "rajesh-joshi-93589",
-  storageBucket: "rajesh-joshi-93589.firebasestorage.app",
-  messagingSenderId: "266777667716",
-  appId: "1:266777667716:web:4550d305e1fac4f695bad1",
+  apiKey: "AIzaSyD359z8RNJyDxMoD0jHzNWLBpADDatOQtA",
+  authDomain: "hardik-44403.firebaseapp.com",
+  databaseURL: "https://hardik-44403-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "hardik-44403",
+  storageBucket: "hardik-44403.firebasestorage.app",
+  messagingSenderId: "1033064814660",
+  appId: "1:1033064814660:web:659ae7cf8873ac895c4411"
 };
 
 // Initialize Firebase

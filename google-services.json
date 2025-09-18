@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "1033064814660",
+    "firebase_url": "https://hardik-44403-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "hardik-44403",
+    "storage_bucket": "hardik-44403.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1033064814660:android:362877b0990d88e35c4411",
+        "android_client_info": {
+          "package_name": "com.livegirlchat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBP-zNlwEny8JyH6aQ2CYtqOVVaMSgquzo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

