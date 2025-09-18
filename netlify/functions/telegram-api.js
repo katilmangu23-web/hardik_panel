@@ -23,7 +23,7 @@ exports.handler = async (event, context) => {
     return {
       statusCode: 200,
       headers: {
-        'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+        'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
         'Access-Control-Allow-Headers': 'Content-Type',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
       },
@@ -36,7 +36,7 @@ exports.handler = async (event, context) => {
     return {
       statusCode: 405,
       headers: {
-        'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+        'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
       },
       body: JSON.stringify({ error: 'Method not allowed' }),
     };
@@ -55,7 +55,7 @@ exports.handler = async (event, context) => {
       return {
         statusCode: 400,
         headers: {
-          'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+          'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
         },
         body: JSON.stringify({ 
           success: false, 
@@ -75,7 +75,7 @@ exports.handler = async (event, context) => {
       return {
         statusCode: 400,
         headers: {
-          'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+          'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
         },
         body: JSON.stringify({ 
           success: false, 
@@ -90,7 +90,7 @@ exports.handler = async (event, context) => {
     return {
       statusCode: 500,
       headers: {
-        'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+        'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
@@ -141,7 +141,7 @@ async function handleSendOTP(email, chat_id) {
       return {
         statusCode: 200,
         headers: {
-          'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+          'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -157,7 +157,7 @@ async function handleSendOTP(email, chat_id) {
       return {
         statusCode: 400,
         headers: {
-          'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+          'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -177,7 +177,7 @@ async function handleSendOTP(email, chat_id) {
     return {
       statusCode: 500,
       headers: {
-        'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+        'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
@@ -207,7 +207,7 @@ async function handleVerifyOTP(email, chat_id, otp) {
       return {
         statusCode: 200,
         headers: {
-          'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+          'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -222,7 +222,7 @@ async function handleVerifyOTP(email, chat_id, otp) {
       return {
         statusCode: 400,
         headers: {
-          'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+          'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -241,7 +241,7 @@ async function handleVerifyOTP(email, chat_id, otp) {
     return {
       statusCode: 500,
       headers: {
-        'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+        'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
@@ -270,7 +270,7 @@ async function handleLinkUser(email, chat_id) {
     return {
       statusCode: 200,
       headers: {
-        'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+        'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -290,7 +290,7 @@ async function handleLinkUser(email, chat_id) {
     return {
       statusCode: 500,
       headers: {
-        'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+        'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 

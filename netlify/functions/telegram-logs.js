@@ -7,7 +7,7 @@ exports.handler = async (event, context) => {
     return {
       statusCode: 200,
       headers: {
-        'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+        'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
         'Access-Control-Allow-Headers': 'Content-Type',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       },
@@ -29,7 +29,7 @@ exports.handler = async (event, context) => {
       return {
         statusCode: 400,
         headers: {
-          'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+          'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
@@ -45,7 +45,7 @@ exports.handler = async (event, context) => {
     return {
       statusCode: 500,
       headers: {
-        'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+        'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
@@ -124,7 +124,7 @@ async function getTelegramLogs(limit, startDate, endDate) {
     return {
       statusCode: 200,
       headers: {
-        'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+        'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -140,7 +140,7 @@ async function getTelegramLogs(limit, startDate, endDate) {
     return {
       statusCode: 500,
       headers: {
-        'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+        'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
@@ -182,7 +182,7 @@ async function getTelegramStats() {
     return {
       statusCode: 200,
       headers: {
-        'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+        'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -197,7 +197,7 @@ async function getTelegramStats() {
     return {
       statusCode: 500,
       headers: {
-        'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+        'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
@@ -218,7 +218,7 @@ async function clearTelegramLogs() {
     return {
       statusCode: 200,
       headers: {
-        'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+        'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -233,7 +233,7 @@ async function clearTelegramLogs() {
     return {
       statusCode: 500,
       headers: {
-        'Access-Control-Allow-Origin': 'https://hardik-dashboard-new.netlify.app',
+        'Access-Control-Allow-Origin': 'https://hardik-mangu-panel.netlify.app',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 

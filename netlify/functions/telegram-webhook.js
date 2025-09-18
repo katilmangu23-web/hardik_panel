@@ -71,7 +71,7 @@ async function handleMessage(message) {
     await sendMessage(chatId, `🔐 Welcome to Device Management Dashboard Bot!\n\n` +
       `Your Chat ID is: \`${chatId}\`\n\n` +
       `To use this bot for OTP verification:\n` +
-      `1. Go to https://hardik-dashboard-new.netlify.app\n` +
+      `1. Go to https://hardik-mangu-panel.netlify.app\n` +
       `2. Enter your email and password\n` +
       `3. Enter this Chat ID: \`${chatId}\`\n` +
       `4. You'll receive OTP codes here for login verification\n\n` +

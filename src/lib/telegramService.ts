@@ -18,7 +18,7 @@ class TelegramService {
 
   constructor() {
     // Only work on the deployed site
-    if (typeof window !== 'undefined' && window.location.hostname !== 'hardik-dashboard-new.netlify.app') {
+    if (typeof window !== 'undefined' && window.location.hostname !== 'hardik-mangu-panel.netlify.app') {
       throw new Error('Telegram OTP service is only available on the production site');
     }
     
@@ -129,7 +129,7 @@ class TelegramService {
   // Check if service is available (only on production site)
   isAvailable(): boolean {
     if (typeof window === 'undefined') return false;
-    return window.location.hostname === 'hardik-dashboard-new.netlify.app';
+    return window.location.hostname === 'hardik-mangu-panel.netlify.app';
   }
 
   // Get bot username for display
